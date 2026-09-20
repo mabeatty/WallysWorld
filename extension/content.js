@@ -13,6 +13,15 @@
   if (!isJob && !kind) return;
   if (isJob && !kind) kind = who.kind === "list" ? "list" : "lot";
 
+  // A scheduled sale page runs in a background tab, where the lot cards can appear a little after the
+  // page finishes loading. Give them time to show up before reading.
+  if (isJob && kind === "list" && EBTH.itemStates(document).size === 0) {
+    var t0 = Date.now();
+    while (Date.now() - t0 < 40000 && !document.querySelector('a.items-grid__item[href*="/items/"]')) {
+      await new Promise(function (r) { setTimeout(r, 500); });
+    }
+  }
+
   var nav = performance.getEntriesByType("navigation")[0];
   var status = nav && nav.responseStatus ? nav.responseStatus : 0;
   var payload = {
@@ -22,7 +31,8 @@
     items: EBTH.listItems(document),
     lot: kind === "lot" ? EBTH.parseLot(document) : null,
     sale: null,
-    pages: 1
+    pages: 1,
+    diag: null
   };
 
   var cards = payload.items.length ? [] : EBTH.cardItems(document);
@@ -48,6 +58,11 @@
     if (res.status >= 400) payload.sig.status = res.status;
     payload.items = EBTH.withEndTimes(res.items, sale && sale.ends_at);
     payload.pages = res.pages;
+  }
+  if (kind === "list" && payload.items.length === 0) {
+    payload.diag = "no lot cards found; grid=" + !!document.getElementById("items_grid") +
+      " anchors=" + document.querySelectorAll('a[href*="/items/"]').length +
+      " visible=" + document.visibilityState + " ready=" + document.readyState;
   }
   try { await chrome.runtime.sendMessage({ type: "capture", payload: payload }); } catch (e) { /* worker asleep or extension reloaded */ }
 })();

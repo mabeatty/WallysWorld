@@ -66,7 +66,7 @@ async function handleCapture(payload, tabId) {
   const v = EBTH.verdictFrom(payload.sig, !!(job && job.requires_login));
   const ok = v[0] === "ok";
   const res = await rpc("ingest_page", { p_token: c.token, p: {
-    kind: payload.kind, url: payload.url, verdict: v[0], note: v[1],
+    kind: payload.kind, url: payload.url, verdict: v[0], note: v[1] || payload.diag || "",
     items: ok ? payload.items : [], lot: ok ? payload.lot : null,
     sale: ok ? payload.sale : null, pages: payload.pages || 1,
     job: job ? { kind: job.kind, url: job.url, item_id: job.item_id } : null } });
