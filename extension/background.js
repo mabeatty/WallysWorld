@@ -12,6 +12,21 @@ chrome.alarms.onAlarm.addListener((a) => { if (a.name === "tick") tick().catch(l
 chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Remember the headers of the page's own list request (per tab, in memory only) so the same request can be
+// repeated for later pages. Header values are never sent anywhere.
+chrome.webRequest.onBeforeSendHeaders.addListener((d) => {
+  if (d.tabId < 0 || !/[?&]page=|\/items/.test(d.url)) return;
+  chrome.storage.session.set({ ["api_" + d.tabId]: { url: d.url, headers: EBTH.replayableHeaders(d.requestHeaders || []) } });
+}, { urls: ["https://www.ebth.com/api/*"] }, ["requestHeaders", "extraHeaders"]);
+
+async function closeJobSurface(pending) {
+  try {
+    if (pending.windowId != null) await chrome.windows.remove(pending.windowId);
+    else await chrome.tabs.remove(pending.tabId);
+  } catch (e) {}
+  try { await chrome.storage.session.remove("api_" + pending.tabId); } catch (e) {}
+}
 const getCfg = () => chrome.storage.local.get({ supabaseUrl: "", anonKey: "", token: "", enabled: false });
 const getPending = async () => (await chrome.storage.session.get("pending")).pending || null;
 const clearPending = () => chrome.storage.session.remove("pending");
@@ -39,8 +54,16 @@ async function tick() {
   const job = await rpc("next_job", { p_token: c.token });
   if (!job) { await setStatus({ idle: true }); return; }
   await sleep(Math.random() * 15000);                       // small random spacing on top of the server's minimum gap
-  const tab = await chrome.tabs.create({ url: job.url, active: false });
-  await chrome.storage.session.set({ pending: { tabId: tab.id, job: job, startedAt: Date.now() } });
+  let tabId, windowId = null;
+  if (job.kind === "list" && job.hint && job.hint.mode === "foreground") {
+    // Only when the database asks for it: a visible (unfocused) window lets the site's own scrolling load every lot.
+    const w = await chrome.windows.create({ url: job.url, focused: false, type: "popup", width: 1100, height: 850 });
+    tabId = w.tabs[0].id; windowId = w.id;
+  } else {
+    const tab = await chrome.tabs.create({ url: job.url, active: false });
+    tabId = tab.id;
+  }
+  await chrome.storage.session.set({ pending: { tabId: tabId, windowId: windowId, job: job, startedAt: Date.now() } });
 }
 
 async function failPending(pending, c) {
@@ -54,7 +77,7 @@ async function failPending(pending, c) {
     kind: j.kind === "list" ? "list" : "lot", url: j.url, verdict: verdict, note: note, items: [], lot: null,
     job: { kind: j.kind, url: j.url, item_id: j.item_id } } });
   await clearPending();
-  try { await chrome.tabs.remove(pending.tabId); } catch (e) {}
+  await closeJobSurface(pending);
   await setStatus({ lastVerdict: verdict, note: note });
 }
 
@@ -73,7 +96,7 @@ async function handleCapture(payload, tabId) {
     job: job ? { kind: job.kind, url: job.url, item_id: job.item_id } : null } });
   if (job) {
     await clearPending();
-    try { await chrome.tabs.remove(tabId); } catch (e) {}
+    await closeJobSurface(pending);
   }
   await setStatus({ lastCapture: Date.now(), lastVerdict: v[0], halted: !!(res && res.halted), source: job ? "job" : "passive" });
 }
@@ -83,6 +106,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     getPending().then((p) => sendResponse({
       job: !!(p && sender.tab && p.tabId === sender.tab.id), kind: p && p.job && p.job.kind,
       hint: p && p.job ? p.job.hint || null : null }));
+    return true;
+  }
+  if (msg.type === "apiRequest" && sender.tab) {
+    chrome.storage.session.get("api_" + sender.tab.id).then((o) => sendResponse(o["api_" + sender.tab.id] || null));
     return true;
   }
   if (msg.type === "capture" && sender.tab) {

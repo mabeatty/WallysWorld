@@ -249,3 +249,53 @@ test("paging with parsed items: request styles are labelled in the diagnostics",
   assert.deepEqual(seenStyles, ["c0", "c0j", "c0j"]);
   assert.match(r.diag, /^c0:200 html 2kB html=0 s=<empty> new=0 \| c0j:200 json 9kB json=48 new=48 \| c0j:200/);
 });
+
+test("paging: a 401 or 404 means 'wrong request style' and the next style is tried; 403 and 429 stop as blocks", async () => {
+  const mk = (from, n) => Array.from({ length: n }, (_, i) => ({ item_id: String(from + i), name: "x", url: null, high_bid: 1, end_label: null }));
+  const first = mk(1, 48);
+  const run = async (codes) => EBTH.collectPages({
+    firstItems: first, itemCount: 96, maxPages: 20, variants: [{ label: "a" }, { label: "b" }, { label: "c" }],
+    sleep: async () => {}, delayMs: () => 0,
+    fetchPage: async (n, v) => ({ status: codes[v.label] || 200, items: (codes[v.label] || 200) === 200 ? mk(49, 48) : [], info: "" })
+  });
+  let r = await run({ a: 401, b: 404 });
+  assert.equal(r.items.length, 96, "third style worked");
+  assert.equal(r.status, 200, "401/404 are not blocks");
+  assert.equal(r.variant, 2);
+  assert.match(r.diag, /^a:401 \| b:404 \| c:200/);
+  r = await run({ a: 403 });
+  assert.equal(r.status, 403);
+  assert.equal(r.items.length, 48);
+  r = await run({ a: 429 });
+  assert.equal(r.status, 429);
+  r = await run({ a: 401, b: 401, c: 401 });
+  assert.equal(r.status, 200, "gives up quietly when nothing is accepted");
+  assert.equal(r.items.length, 48);
+  assert.equal(r.pages, 4);
+});
+
+test("the page's own request headers are kept for replay, minus anything the browser sets itself", () => {
+  const h = EBTH.replayableHeaders([
+    { name: "Accept", value: "application/json" }, { name: "Authorization", value: "Bearer abc" }, { name: "X-CSRF-Token", value: "t" },
+    { name: "Cookie", value: "a=b" }, { name: "User-Agent", value: "x" }, { name: "Referer", value: "r" }, { name: "sec-fetch-mode", value: "cors" },
+    { name: "Origin", value: "o" }, { name: "Accept-Language", value: "en" }, { name: "X-Requested-With", value: "XMLHttpRequest" }]);
+  assert.deepEqual(Object.keys(h).sort(), ["Accept", "Authorization", "X-CSRF-Token", "X-Requested-With"]);
+  assert.deepEqual(EBTH.replayableHeaders({ "Content-Length": "9", "X-Api-Key": "k" }), { "X-Api-Key": "k" });
+});
+
+test("scrolling stops when the target is reached, when growth stalls, or at the time limit", async () => {
+  const make = (growth) => {
+    let t = 0, n = 48, step = 0;
+    return { count: () => n, scroll: () => { step++; if (growth(step)) n += 48; }, sleep: async (ms) => { t += ms; }, now: () => t };
+  };
+  let f = make(() => true);
+  let r = await EBTH.scrollUntil({ ...f, target: 319, maxMs: 90000, idleMs: 9000, stepMs: 1500 });
+  assert.equal(r.count, 336, "stops as soon as the target is reached (48 x 7)");
+  f = make((s) => s <= 2);
+  r = await EBTH.scrollUntil({ ...f, target: 319, maxMs: 90000, idleMs: 9000, stepMs: 1500 });
+  assert.equal(r.count, 144);
+  assert.ok(r.ms < 30000, "gives up after growth stalls");
+  f = make(() => false);
+  r = await EBTH.scrollUntil({ ...f, target: 319, maxMs: 4000, idleMs: 99999, stepMs: 1500 });
+  assert.ok(r.ms >= 4000 && r.count === 48, "time limit");
+});

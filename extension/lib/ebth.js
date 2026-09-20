@@ -271,6 +271,8 @@
                .replace(/\\"/g, '"').replace(/\\\//g, "/").replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
   }
 
+  var WRONG_STYLE = [401, 404, 405, 406, 410, 422];
+
   // Load the remaining pages of a paged list. fetchPage(n, variant) -> Promise<{status, doc, info}>.
   // Timing and fetching are injected so this can be tested. Page 2 is tried with each request
   // variant in turn until one returns new cards; that variant is then used for the rest. Stops on
@@ -294,7 +296,11 @@
         r = await o.fetchPage(p, variants[v]);
         pages++;
         var lab = (variants[v] && variants[v].label) || "v" + v;
-        if (r.status >= 400) { status = r.status; diag.push(lab + ":" + r.status); break; }
+        if (r.status >= 400) {
+          diag.push(lab + ":" + r.status);
+          if (WRONG_STYLE.indexOf(r.status) >= 0) continue;     // this request style is not accepted; try the next one
+          status = r.status; break;                             // 403, 429, 5xx: treat as a block
+        }
         added = merge(r);
         diag.push(lab + ":" + r.status + (r.info ? " " + r.info : "") + " new=" + added);
         if (added > 0) { if (p === 2) vi = k; break; }
@@ -302,6 +308,31 @@
       if (status >= 400 || added === 0) break;
     }
     return { items: items, pages: pages, status: status, variant: vi, diag: diag.join(" | ").slice(0, 900) };
+  }
+
+  // Headers worth replaying from the page's own request. Everything the browser sets itself is left out.
+  var SKIP_HEADERS = /^(cookie|host|user-agent|accept-encoding|accept-language|connection|content-length|origin|referer|priority|pragma|cache-control|upgrade-insecure-requests|te|sec-.*)$/i;
+  function replayableHeaders(list) {
+    var out = {};
+    var entries = Array.isArray(list) ? list.map(function (h) { return [h.name, h.value]; })
+                                      : Object.keys(list || {}).map(function (k) { return [k, list[k]]; });
+    entries.forEach(function (e) { if (e[0] && e[1] != null && !SKIP_HEADERS.test(e[0])) out[e[0]] = e[1]; });
+    return out;
+  }
+
+  // Scroll a page until it has loaded `target` lots, growth stops, or time runs out.
+  // count/scroll/sleep/now are injected so this can be tested.
+  async function scrollUntil(o) {
+    var start = o.now(), last = o.count(), lastGrowth = start;
+    while (o.now() - start < o.maxMs) {
+      if (o.target && o.count() >= o.target) break;
+      o.scroll();
+      await o.sleep(o.stepMs || 1500);
+      var c = o.count();
+      if (c > last) { last = c; lastGrowth = o.now(); }
+      else if (o.now() - lastGrowth >= o.idleMs) break;
+    }
+    return { count: o.count(), ms: o.now() - start };
   }
 
   function pageKind(doc, pathname) {
@@ -347,7 +378,7 @@
   var EBTH = { itemStates: itemStates, normState: normState, listItems: listItems, parseLot: parseLot,
                cardItems: cardItems, saleMeta: saleMeta, parseEndLabel: parseEndLabel, withEndTimes: withEndTimes,
                collectPages: collectPages, htmlFromPossiblyEscaped: htmlFromPossiblyEscaped,
-               parsePageResponse: parsePageResponse, listRequestCandidates: listRequestCandidates, withPage: withPage, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
+               parsePageResponse: parsePageResponse, replayableHeaders: replayableHeaders, scrollUntil: scrollUntil, listRequestCandidates: listRequestCandidates, withPage: withPage, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
   if (typeof module !== "undefined" && module.exports) module.exports = EBTH;
   else root.EBTH = EBTH;
 })(typeof globalThis !== "undefined" ? globalThis : this);
