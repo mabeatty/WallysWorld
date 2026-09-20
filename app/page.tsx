@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { rpc, type Lot } from "@/lib/supabase";
-import { ago, money, timeLeft, when } from "@/lib/format";
+import { rpc, type Lot, type Search } from "@/lib/supabase";
+import { ago, headroom, maxBidState, money, range, timeLeft, when } from "@/lib/format";
 import { resume, setPaused } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,10 @@ type Home = {
 };
 
 export default async function Home() {
-  const d = await rpc<Home>("dash_home");
+  const [d, ests] = await Promise.all([
+    rpc<Home>("dash_home"),
+    rpc<Search>("dash_search", { p: { status: "open", estimate: "with", sort: "ends", limit: 12 } }),
+  ]);
   const now = new Date();
   const halt = d.halt;
   const paused = d.paused === true;
@@ -27,8 +30,13 @@ export default async function Home() {
       <meta httpEquiv="refresh" content="60" />
       <header className="top">
         <h1>EBTH Watch</h1>
-        <nav className="links"><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
       </header>
+
+      <form method="get" action="/lots" className="search">
+        <input type="search" name="q" placeholder="Find lots: try sterling, rookwood, wiener" aria-label="Find lots" />
+        <button type="submit">Find lots</button>
+      </form>
 
       <p className="status">
         <span className={`dot ${state === "collecting" ? "" : state}`} />
@@ -52,6 +60,31 @@ export default async function Home() {
         <div><span>Closing prices captured</span><b>{d.closeouts}</b></div>
         <div><span>Page loads, last 24h</span><b>{d.jobs_24h}</b></div>
       </div>
+
+      <h2>Your estimates</h2>
+      <p className="note">Open lots you have valued, soonest closing first. <Link href="/lots?estimate=with&sort=gap">See all, by headroom</Link></p>
+      {ests.rows.length === 0 ? (
+        <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
+      ) : (
+        <table>
+          <thead><tr><th>Lot</th><th className="num">Bid</th><th className="hide-sm">Estimate</th><th className="hide-sm">Headroom</th><th>Time left</th></tr></thead>
+          <tbody>
+            {ests.rows.map((l) => {
+              const hd = headroom(l.est_low, l.high_bid);
+              const mb = maxBidState(l, now.getTime());
+              return (
+                <tr key={l.item_id}>
+                  <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>
+                  <td className="num">{money(l.high_bid)}</td>
+                  <td className="hide-sm">{range(l.est_low, l.est_high)}</td>
+                  <td className="hide-sm">{hd ? <span className={hd.positive ? "pos" : "neg"}>{hd.text}</span> : null}{mb ? <span className={`chip ${mb.tone}`} style={{ marginLeft: hd ? 8 : 0 }}>{mb.label}</span> : null}</td>
+                  <td>{timeLeft(l.ends_at, now.getTime()).label}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
 
       <h2>Closing soon</h2>
       <p className="note">Bars show time left out of the next 24 hours. Bid counts and bidders are from the latest capture.</p>

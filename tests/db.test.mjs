@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATION, HAVE_FIXTURES, HAVE_SALE, SALE_URL, LOT_ID, lotDoc, listDoc, saleDoc, salePayload, payload } from "./helpers.mjs";
+import { MIGRATION, HAVE_FIXTURES, HAVE_SALE, SALE_URL, LOT_ID, EBTH, lotDoc, listDoc, saleDoc, salePayload, payload } from "./helpers.mjs";
 
 const skip = !HAVE_FIXTURES && "save a lot page (filename contains Rolex) and the Followed Items page into tests/fixtures";
 const LOT_PATH = "/items/14568274-1970-rolex";
@@ -406,4 +406,122 @@ test("the page count is learned from the sale's lot count on page 1, and only fr
   await t.ingest(salePayload(saleDoc(), { job: pageJob(SALE_URL + "?page=2"), page: 2 }), at(T0, 1));
   await t.ingest(salePayload(saleDoc(), { job: null, page: 1 }), at(T0, 2));
   assert.equal(await count(), null, "a later page or a page you browsed yourself does not change it");
+});
+
+// ---------------------------------------------------------------- find lots and value estimates
+async function loaded() {
+  const t = await fresh();
+  const dash = (await t.one("select value #>> '{}' v from settings where key='dashboard_token'")).v;
+  const pageSizeJob = (pg) => ({ kind: "list", url: SALE_URL + (pg > 1 ? "?page=" + pg : ""), item_id: null });
+  for (let pg = 1; pg <= 7; pg++) await t.ingest(salePayload(saleDoc(), { job: pageSizeJob(pg), page: pg }), at(T0, pg * 0.1));
+  await t.ingest(listPayload(), at(T0, 5));                                   // followed lots: exact end times, bid counts
+  // what the database should now know, computed independently from the saved pages
+  const sale = EBTH.saleMeta(saleDoc());
+  const cards = EBTH.withEndTimes(EBTH.cardItems(saleDoc()), sale.ends_at);
+  const followed = EBTH.listItems(listDoc());
+  const lots = new Map();
+  for (const c of cards) lots.set(c.item_id, { name: c.name, bid: c.high_bid, end: new Date(c.ends_at) });
+  for (const f of followed) lots.set(f.item_id, { name: f.name, bid: f.high_bid, end: new Date(f.ends_at) });
+  const search = async (obj, now = at(T0, 10)) => (await t.db.query("select dash_search($1,$2::jsonb,$3::timestamptz) r", [dash, JSON.stringify(obj), now])).rows[0].r;
+  const setEst = (id, low, high, max, conf, notes, src) =>
+    t.db.query("select dash_set_estimate($1,$2,$3,$4,$5,$6,$7,$8)", [dash, id, low, high, max, conf, notes, src]);
+  return { t, dash, lots, search, setEst };
+}
+const WIENER = () => EBTH.cardItems(saleDoc()).find((c) => /Ed Wiener/.test(c.name)).item_id;
+
+test("find lots: words must all match, case doesn't matter, and % or _ are just characters", { skip: skipSale }, async () => {
+  const { lots, search } = await loaded();
+  const names = [...lots.values()].map((l) => l.name.toLowerCase());
+  const count = (f) => names.filter(f).length;
+  const all = await search({ status: "all", limit: 1 });
+  assert.equal(all.total, lots.size, "every sale lot and every followed lot is searchable");
+  assert.equal((await search({ q: "STERLING", status: "all", limit: 1 })).total, count((n) => n.includes("sterling")));
+  assert.equal((await search({ q: "14k  ring", status: "all", limit: 1 })).total, count((n) => n.includes("14k") && n.includes("ring")));
+  assert.equal((await search({ q: "wiener", status: "all" })).rows.length, 1);
+  assert.equal((await search({ q: "%", status: "all", limit: 1 })).total, count((n) => n.includes("%")), "% is not a wildcard");
+  assert.equal((await search({ q: "_", status: "all", limit: 1 })).total, count((n) => n.includes("_")), "_ is not a wildcard");
+  assert.equal((await search({ q: "no such lot anywhere", status: "all" })).total, 0);
+});
+
+test("find lots: open and closed, bid range, closing soon, tracked, sale", { skip: skipSale }, async () => {
+  const { lots, search } = await loaded();
+  const now = new Date("2026-09-21T00:30:00Z");
+  const arr = [...lots.values()];
+  assert.equal((await search({ status: "open", limit: 1 }, now.toISOString())).total, arr.filter((l) => l.end > now).length);
+  assert.equal((await search({ status: "closed", limit: 1 }, now.toISOString())).total, arr.filter((l) => l.end <= now).length);
+  assert.equal((await search({ status: "all", min_bid: 1000, limit: 1 })).total, arr.filter((l) => Number(l.bid) >= 1000).length);
+  assert.equal((await search({ status: "all", max_bid: 50, limit: 1 })).total, arr.filter((l) => Number(l.bid) <= 50).length);
+  const soon = new Date("2026-09-20T23:30:00Z");
+  assert.equal((await search({ within_hours: 1 }, soon.toISOString())).total,
+    arr.filter((l) => l.end > soon && l.end <= new Date(soon.getTime() + 3600e3)).length, "closing within the hour");
+  assert.equal((await search({ status: "all", tracked: true, limit: 1 })).total, 20, "the 20 followed lots");
+  assert.equal((await search({ status: "all", sale: "90479", limit: 1 })).total, 318);
+  const byEnd = (await search({ status: "all", limit: 200 })).rows.map((r) => new Date(r.ends_at).getTime());
+  assert.deepEqual(byEnd, [...byEnd].sort((a, b) => a - b), "soonest closing first by default");
+});
+
+test("find lots: sorting, paging, and limits", { skip: skipSale }, async () => {
+  const { lots, search } = await loaded();
+  const p1 = await search({ status: "all", limit: 10, offset: 0, sort: "bid_desc" });
+  const p2 = await search({ status: "all", limit: 10, offset: 10, sort: "bid_desc" });
+  assert.equal(p1.rows.length, 10);
+  assert.equal(p1.total, p2.total);
+  assert.equal(new Set([...p1.rows, ...p2.rows].map((r) => r.item_id)).size, 20, "pages do not overlap");
+  const bids = p1.rows.map((r) => Number(r.high_bid));
+  assert.deepEqual(bids, [...bids].sort((a, b) => b - a));
+  assert.equal(bids[0], Math.max(...[...lots.values()].map((l) => Number(l.bid))));
+  assert.equal((await search({ status: "all", limit: 500 })).limit, 200, "capped at 200 a page");
+  assert.equal((await search({ status: "all", sort: "name", limit: 3 })).rows.length, 3);
+});
+
+test("estimates: saved, shown in search and on the lot, searchable, sortable by gap, and logged", { skip: skipSale }, async () => {
+  const { t, dash, search, setEst } = await loaded();
+  const w = WIENER();
+  await setEst(w, 800, 1500, 400, "medium", "Rago $4,063 (2021), Wright $3,024. Verify signature.", "https://www.ragoarts.com/x");
+  await setEst(LOT_ID, 3000, 4500, 3400, "low", "watch comps", null);
+  const withEst = await search({ status: "all", estimate: "with" });
+  assert.equal(withEst.total, 2);
+  assert.equal((await search({ status: "all", estimate: "without", limit: 1 })).total, (await search({ status: "all", limit: 1 })).total - 2);
+  const byGap = await search({ status: "all", estimate: "with", sort: "gap" });
+  assert.equal(byGap.rows[0].item_id, w, "the lot with the most headroom first");
+  assert.equal(Number(byGap.rows[0].gap), 800 - Number(byGap.rows[0].high_bid));
+  assert.equal(Number(byGap.rows[0].max_bid), 400);
+  assert.ok(Number(byGap.rows[1].gap) < 0, "the Rolex is already above its low estimate");
+  assert.equal((await search({ status: "all", q: "signature" })).rows[0].item_id, w, "your notes are searchable");
+  const lot = (await t.db.query("select dash_lot($1,$2) r", [dash, w])).rows[0].r;
+  assert.deepEqual([Number(lot.estimate.est_low), Number(lot.estimate.est_high), lot.estimate.confidence], [800, 1500, "medium"]);
+  await setEst(w, 900, 1500, 450, "high", "revised", null);                   // update in place
+  assert.equal((await search({ status: "all", estimate: "with", limit: 1 })).total, 2);
+  const log = (await t.db.query("select action, est_low, high_bid_at_time from lot_estimate_log where item_id=$1 order by id", [w])).rows;
+  assert.deepEqual(log.map((r) => Number(r.est_low)), [800, 900], "every change is kept");
+  assert.ok(Number(log[0].high_bid_at_time) > 0, "with the bid at that moment");
+  await t.db.query("select dash_clear_estimate($1,$2)", [dash, w]);
+  assert.equal((await search({ status: "all", estimate: "with", limit: 1 })).total, 1);
+  assert.equal((await t.db.query("select action from lot_estimate_log where item_id=$1 order by id desc limit 1", [w])).rows[0].action, "clear");
+});
+
+test("estimates: bad input is refused with a reason", { skip: skipSale }, async () => {
+  const { t, dash, setEst } = await loaded();
+  const w = WIENER();
+  await assert.rejects(() => setEst(w, 900, 800, null, null, null, null), /low estimate is above/);
+  await assert.rejects(() => setEst(w, -5, 100, null, null, null, null), /zero or more/);
+  await assert.rejects(() => setEst(w, 100, 200, null, "certain", null, null), /confidence must be/);
+  await assert.rejects(() => setEst("nope", 100, 200, null, null, null, null), /unknown lot/);
+  await assert.rejects(() => setEst(w, null, null, null, null, "  ", ""), /at least one value or a note/);
+  await setEst(w, 100, null, null, null, null, null);                          // low only is fine
+  await setEst(w, null, null, null, null, "just a note", null);                // note only is fine
+  const r = (await t.db.query("select est_low, notes from lot_estimates where item_id=$1", [w])).rows[0];
+  assert.deepEqual([r.est_low, r.notes], [null, "just a note"]);
+  await t.db.query("select dash_clear_estimate($1,$2)", [dash, "not-a-lot"]);   // clearing something that isn't there is harmless
+});
+
+test("search and estimates are dashboard-only", { skip: skipSale }, async () => {
+  const { t, dash } = await loaded();
+  await t.db.exec("set role anon");
+  await assert.rejects(() => t.db.query("select dash_search($1)", [t.token]), /invalid token/);
+  await assert.rejects(() => t.db.query("select dash_set_estimate($1,$2,1,2,null,null,'x',null)", [t.token, LOT_ID]), /invalid token/);
+  await assert.rejects(() => t.db.query("select * from lot_estimates"), /permission denied/);
+  await assert.rejects(() => t.db.query("select * from lot_estimate_log"), /permission denied/);
+  assert.ok((await t.db.query("select dash_search($1) r", [dash])).rows[0].r.total > 0);
+  await t.db.exec("reset role");
 });

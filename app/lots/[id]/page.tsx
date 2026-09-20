@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { rpc, type Lot } from "@/lib/supabase";
-import { money, when } from "@/lib/format";
+import { rpc, type Estimate, type Lot } from "@/lib/supabase";
+import { headroom, maxBidState, money, range, when } from "@/lib/format";
+import { clearEstimate, saveEstimate } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -11,19 +12,24 @@ type Detail = {
   verified_by?: string | null; categories?: string[]; sale_name?: string | null; catalog_number?: string | null;
 };
 
-export default async function LotPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LotPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { id } = await params;
-  const r = await rpc<{ lot: Lot | null; details: Detail | null; snapshots: Snap[] }>("dash_lot", { p_id: id });
+  const sp = await searchParams;
+  const flag = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
+  const r = await rpc<{ lot: Lot | null; details: Detail | null; estimate: Estimate | null; snapshots: Snap[] }>("dash_lot", { p_id: id });
   if (!r.lot) notFound();
   const l = r.lot;
   const d = r.details ?? {};
   const history = r.snapshots;
+  const est = r.estimate;
+  const h = est ? headroom(est.est_low, l.high_bid) : null;
+  const mb = est ? maxBidState({ max_bid: est.max_bid, min_next_bid: l.min_next_bid, high_bid: l.high_bid, ends_at: l.ends_at }) : null;
 
   return (
     <>
       <header className="top">
         <h1>{l.name ?? l.item_id}</h1>
-        <nav className="links"><Link href="/">Dashboard</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/lots">Find lots</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
       </header>
       <p className="note">
         {[d.sale_name ?? l.sale_name, d.categories?.[0], d.catalog_number].filter(Boolean).join(", ")}
@@ -43,6 +49,44 @@ export default async function LotPage({ params }: { params: Promise<{ id: string
             <img key={src} src={src} alt="" loading="lazy" />
           ))}
         </div>
+      )}
+
+      <h2 id="estimate">Your estimate</h2>
+      {flag("saved") && <div className="saved" role="status">Estimate saved.</div>}
+      {flag("removed") && <div className="saved" role="status">Estimate removed.</div>}
+      {flag("error") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("error")}</p></div>}
+      {est ? (
+        <p className="note">
+          Worth {range(est.est_low, est.est_high)}{est.confidence ? `, ${est.confidence} confidence` : ""}.
+          {h ? <> Headroom over the current bid: <span className={h.positive ? "pos" : "neg"}>{h.text}</span>.</> : null}
+          {mb ? <> <span className={`chip ${mb.tone}`}>{mb.label}</span></> : null}
+        </p>
+      ) : (
+        <p className="note">Nothing recorded yet. Add what you think this lot could resell for, and the most you would bid.</p>
+      )}
+      <form action={saveEstimate} className="estimate">
+        <input type="hidden" name="id" value={l.item_id} />
+        <label>Low estimate<input type="text" inputMode="decimal" name="low" defaultValue={est?.est_low ?? ""} placeholder="$" /></label>
+        <label>High estimate<input type="text" inputMode="decimal" name="high" defaultValue={est?.est_high ?? ""} placeholder="$" /></label>
+        <label>Most you would bid<input type="text" inputMode="decimal" name="max_bid" defaultValue={est?.max_bid ?? ""} placeholder="$" /></label>
+        <label>Confidence
+          <select name="confidence" defaultValue={est?.confidence ?? ""}>
+            <option value="">Not set</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+          </select>
+        </label>
+        <label className="wide">Notes and comps
+          <textarea name="notes" defaultValue={est?.notes ?? ""} placeholder="What it is, what similar pieces sold for, what to verify" />
+        </label>
+        <label className="wide">Sources
+          <textarea name="sources" defaultValue={est?.sources ?? ""} placeholder="One link per line" />
+        </label>
+        <div className="actions"><button type="submit">Save estimate</button></div>
+      </form>
+      {est && (
+        <form action={clearEstimate}>
+          <input type="hidden" name="id" value={l.item_id} />
+          <button className="quiet" type="submit">Remove estimate</button>
+        </form>
       )}
 
       <h2>Bid history</h2>

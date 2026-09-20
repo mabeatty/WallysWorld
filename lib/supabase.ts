@@ -32,7 +32,17 @@ export async function rpc<T = unknown>(name: string, args: Record<string, unknow
 
 export type Lot = {
   item_id: string; name: string | null; url: string | null; ends_at: string | null;
-  sale_name: string | null; closeout_done: boolean;
+  sale_id?: string | null; sale_name: string | null; closeout_done: boolean; tracked?: boolean;
   state: string | null; high_bid: number | null; min_next_bid: number | null;
   bids_count: number | null; unique_bidders: number | null; extended: boolean | null; snapshot_ts: string | null;
+  // present on search results when you have entered an estimate
+  est_low?: number | null; est_high?: number | null; max_bid?: number | null;
+  confidence?: string | null; est_notes?: string | null; gap?: number | null;
 };
+
+export type Estimate = {
+  est_low: number | null; est_high: number | null; max_bid: number | null;
+  confidence: string | null; notes: string | null; sources: string | null; updated_at: string;
+};
+
+export type Search = { total: number; limit: number; offset: number; rows: Lot[] };
