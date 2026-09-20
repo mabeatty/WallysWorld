@@ -226,7 +226,7 @@ const saleJob = { kind: "list", url: SALE_URL, item_id: null, requires_login: fa
 test("sale page: hundreds of lots stored cheaply; only followed lots get detail and close-out loads", { skip: skipSale }, async () => {
   const t = await fresh();
   const t1 = "2026-09-20T19:45:00Z";
-  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), t1);
+  for (let pg = 1; pg <= 7; pg++) await t.ingest(salePayload(saleDoc(), { job: saleJob, page: pg }), at(t1, pg * 0.1));
   assert.equal(await t.count("lots"), 318);
   assert.equal(await t.count("snapshots"), 318);
   assert.equal(await t.count("lots", "tracked"), 0, "sale lots are not tracked by default");
@@ -252,7 +252,7 @@ test("sale page: hundreds of lots stored cheaply; only followed lots get detail 
 test("sale page: minute-rounded card times never overwrite an exact end time", { skip: skipSale }, async () => {
   const t = await fresh();
   await t.ingest(listPayload(), T0);                            // exact: 20:03:20 ET
-  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), at(T0, 5));
+  await t.ingest(salePayload(saleDoc(), { job: saleJob }), at(T0, 5));
   let r = await t.one("select ends_at e, closeout_tries n from lots where item_id=$1", [LOT_ID]);
   assert.equal(new Date(r.e).toISOString(), "2026-09-21T00:03:20.000Z", "exact time kept");
   await t.db.query("update lots set closeout_tries=2 where item_id=$1", [LOT_ID]);
@@ -276,9 +276,9 @@ test("sale page: the lot view keeps bid counts from lot pages while showing the 
 
 test("pages count toward the daily cap, so a big sale refresh uses more of it", { skip: skipSale }, async () => {
   const t = await fresh({ daily_request_cap: 20 });
-  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), T0);     // 15 pages
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, mutate: (p) => { p.pages = 15; } }), T0);     // 15 pages read
   assert.ok(await t.next(at(T0, 10)), "15 of 20 used");
-  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), at(T0, 20));
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, mutate: (p) => { p.pages = 15; } }), at(T0, 20));
   assert.equal(await t.next(at(T0, 30)), null, "30 of 20 used");
 });
 
@@ -311,7 +311,7 @@ test("adding a sale or category page from the dashboard sets the slower near-clo
 test("a partial sale page you open yourself does not reset the schedule for the full read", { skip: skipSale }, async () => {
   const t = await fresh();
   const base = "2026-09-20T19:00:00Z";                          // far from any close: regular 30-minute cadence
-  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 6 }), base);
+  await t.ingest(salePayload(saleDoc(), { job: saleJob }), base);
   await t.ingest(listPayload(), at(base, 1));                    // followed list, fetched by a job
   await t.db.query("update lots set detail_done = true");        // keep detail loads out of this test
   await t.ingest(listPayload(), at(base, 25));                   // keep the followed list fresh so only the sale is due
@@ -343,4 +343,67 @@ test("diagnostics are stored with the capture, and the paging hint reaches the e
   job = await t.next(at(T0, 100));
   assert.equal(job.hint.urlTemplate, "https://www.ebth.com/api/items?sale_id=90479&page={page}");
   assert.equal(job.hint.headers["X-Requested-With"], "XMLHttpRequest");
+});
+
+const pageJob = (url) => ({ kind: "list", url, item_id: null });
+const pageNo = (url) => Number((url.match(/page=(\d+)/) || [0, 1])[1]);
+async function readNext(t, when) {                       // do what the extension does: take the next job, read that page, report it
+  const j = await t.next(when);
+  const total = t.pages ? t.pages * 48 : 319;
+  if (j) await t.ingest(salePayload(saleDoc(), { job: pageJob(j.url), page: pageNo(j.url), mutate: (p) => { p.sale.item_count = total; } }), when);
+  return j;
+}
+async function paged(pages, extra = {}) {
+  const t = await fresh(extra);
+  t.pages = pages;
+  await t.db.query("update seeds set page_count = $1 where name = 'sale-90479'", [pages]);
+  await t.db.query("update seeds set enabled = false where name = 'followed'");
+  return t;
+}
+
+test("paged sale: each page is its own read, walked in order and refreshed on its own schedule", { skip: skipSale }, async () => {
+  const t = await paged(3);
+  const base = "2026-09-20T19:00:00Z";
+  const seen = [];
+  for (let i = 0; i < 3; i++) seen.push((await readNext(t, at(base, i))).url);
+  assert.deepEqual(seen, [SALE_URL, SALE_URL + "?page=2", SALE_URL + "?page=3"]);
+  assert.equal(await t.next(at(base, 5)), null, "everything was just read");
+  assert.equal((await t.next(at(base, 31))).url, SALE_URL, "page 1 comes round again after 30 minutes");
+  assert.equal(await t.count("lots"), 144, "three pages of 48 lots");
+});
+
+test("paged sale: pages closing soonest are refreshed every 10 minutes, later pages stay on 30", { skip: skipSale }, async () => {
+  const t = await paged(7);
+  const base = "2026-09-20T23:20:00Z";                         // first lots close at 00:00Z
+  for (let pg = 1; pg <= 7; pg++) await t.ingest(salePayload(saleDoc(), { job: pageJob(SALE_URL + (pg > 1 ? "?page=" + pg : "")), page: pg }), at(base, pg * 0.1));
+  assert.equal(await t.next(at(base, 5)), null, "hot pages wait their 10 minutes");
+  const first = await readNext(t, at(base, 11));
+  assert.equal(first.url, SALE_URL);
+  const second = await readNext(t, at(base, 11.2));
+  assert.equal(second.url, SALE_URL + "?page=2");
+  assert.equal(await t.next(at(base, 11.4)), null, "page 3 closes later, so it is not hot yet; page 7 even less so");
+  const later = await t.next(at(base, 31));
+  assert.ok(later, "the slower pages come due at 30 minutes");
+});
+
+test("paged sale: a page is retired after a read taken once all of its lots closed, and when its lots vanish", { skip: skipSale }, async () => {
+  const t = await paged(2);
+  await readNext(t, "2026-09-21T00:30:00Z");                    // page 1 lots closed 00:00-00:16Z: this read is the final capture
+  const next = await t.next("2026-09-21T02:00:00Z");
+  assert.equal(next.url, SALE_URL + "?page=2", "page 1 is retired; page 2 was never read");
+  await t.ingest(salePayload(saleDoc(), { job: pageJob(next.url), page: 2 }), "2026-09-21T00:20:00Z");   // read while page 2 was still open
+  await t.ingest(salePayload(saleDoc(), { job: pageJob(next.url), page: 2, mutate: (p) => { p.items = []; } }), "2026-09-21T00:50:00Z");  // then the lots vanish
+  assert.equal(await t.next("2026-09-21T03:00:00Z"), null, "nothing left to read");
+});
+
+test("the page count is learned from the sale's lot count on page 1, and only from page 1", { skip: skipSale }, async () => {
+  const t = await fresh();
+  const count = async () => (await t.one("select page_count c from seeds where name = 'sale-90479'")).c;
+  assert.equal(await count(), null);
+  await t.ingest(salePayload(saleDoc(), { job: pageJob(SALE_URL), page: 1 }), T0);
+  assert.equal(await count(), 7, "319 lots at 48 a page");
+  await t.db.query("update seeds set page_count = null where name = 'sale-90479'");
+  await t.ingest(salePayload(saleDoc(), { job: pageJob(SALE_URL + "?page=2"), page: 2 }), at(T0, 1));
+  await t.ingest(salePayload(saleDoc(), { job: null, page: 1 }), at(T0, 2));
+  assert.equal(await count(), null, "a later page or a page you browsed yourself does not change it");
 });

@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 export const EBTH = require("../extension/lib/ebth.js");
 const mig = (f) => fs.readFileSync(path.join(here, "../supabase/migrations", f), "utf8");
 export const MIGRATION_0001 = mig("0001_init.sql");
-export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql"), mig("0004_diagnostics_and_hint.sql")].join("\n");
+export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql"), mig("0004_diagnostics_and_hint.sql"), mig("0005_paged_sales.sql")].join("\n");
 
 const fx = path.join(here, "fixtures");
 const find = (re) => fs.readdirSync(fx).filter((f) => re.test(f)).map((f) => path.join(fx, f))[0];
@@ -30,17 +30,19 @@ export const listDoc = () => load(LIST_FILE, "https://www.ebth.com/users/followe
 export const SALE_URL = "https://www.ebth.com/sales/90479-september-remarkable-finds";
 export const saleDoc = () => load(SALE_FILE, SALE_URL);
 
-// What content.js sends for a sale page (first page already parsed; later pages passed in).
-export function salePayload(doc, { job = null, extraPages = 0, cards, mutate } = {}) {
+// What content.js sends for one page of a sale (page 1 is the plain sale address; later pages are ?page=N).
+export function salePayload(doc, { job = null, page = 1, pageSize = 48, mutate } = {}) {
   const sale = EBTH.saleMeta(doc);
-  const items = EBTH.withEndTimes(cards || EBTH.cardItems(doc), sale && sale.ends_at);
+  const cards = EBTH.cardItems(doc).slice((page - 1) * pageSize, page * pageSize);
+  const items = EBTH.withEndTimes(cards, sale && sale.ends_at);
   const p = { kind: "list", url: SALE_URL, verdict: "ok", note: "", items, lot: null,
-              sale: { id: sale.id, name: sale.name }, pages: 1 + extraPages, job };
+              sale: { id: sale.id, name: sale.name, item_count: sale.item_count }, pages: 1,
+              job: job ? { ...job, url: SALE_URL + (page > 1 ? "?page=" + page : "") } : null };
   if (mutate) mutate(p);
   return p;
 }
 
-// Exactly what content.js + background.js would send for a page.
+// Exactly what content.js + background.js would send for a lot or followed-items page.
 export function payload(doc, pathname, { job = null, status = 200, requiresLogin = false, mutate } = {}) {
   const kind = EBTH.pageKind(doc, pathname) || (job && job.kind === "list" ? "list" : "lot");
   const [verdict, note] = EBTH.verdictFrom(EBTH.signals(doc, status), requiresLogin);

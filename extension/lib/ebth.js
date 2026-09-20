@@ -176,16 +176,16 @@
     return new Date(parseInt(m[3], 10), mon, parseInt(m[2], 10), h, parseInt(m[5], 10), 0, 0);
   }
 
-  // Attach ISO end times to card items. Cards only show minutes, so they are flagged approximate,
-  // and they are dropped entirely unless the earliest one lines up with the sale's own end time
-  // (a guard against the page showing times in a time zone other than this browser's).
+  // Attach ISO end times to card items. Cards only show minutes, so they are flagged approximate. A sale's lots
+  // close in order starting at the sale's own end time, so if the earliest card on the page comes out EARLIER
+  // than the sale end, the page is showing times in a zone other than this browser's: drop them all.
   function withEndTimes(items, saleEndsAt) {
     var dates = items.map(function (i) { return parseEndLabel(i.end_label); });
     var valid = dates.filter(Boolean);
     var ok = valid.length > 0;
     if (ok && saleEndsAt) {
       var min = Math.min.apply(null, valid.map(function (d) { return d.getTime(); }));
-      ok = Math.abs(min - new Date(saleEndsAt).getTime()) <= 20 * 60000;
+      ok = min >= new Date(saleEndsAt).getTime() - 5 * 60000;
     }
     return items.map(function (i, k) {
       var r = {}; for (var key in i) if (key !== "end_label") r[key] = i[key];
@@ -194,145 +194,6 @@
       r.ends_at_approx = true;
       return r;
     });
-  }
-
-  // ---- later pages may come back as JSON. The shape is not known in advance, so look for arrays of
-  // objects that resemble the site's own item state (id, name, bid amount / end time) and map them.
-  function looksLikeItem(o) {
-    return !!o && typeof o === "object" && !Array.isArray(o) && /^\d+$/.test(String(o.id == null ? "" : o.id)) &&
-      (typeof o.name === "string" || typeof o.title === "string") &&
-      ("highBidAmount" in o || "currentBid" in o || "current_bid" in o || "bidAmount" in o || "saleEndsAt" in o || "aasmState" in o);
-  }
-  function findItemArrays(v, out, depth) {
-    if (v == null || depth > 6) return out;
-    if (Array.isArray(v)) {
-      var n = v.filter(looksLikeItem).length;
-      if (n > 0 && n >= v.length / 2) { out.push(v); return out; }
-      v.forEach(function (x) { findItemArrays(x, out, depth + 1); });
-    } else if (typeof v === "object") {
-      Object.keys(v).forEach(function (k) { findItemArrays(v[k], out, depth + 1); });
-    }
-    return out;
-  }
-  function firstDefined() { for (var i = 0; i < arguments.length; i++) if (arguments[i] != null) return arguments[i]; return null; }
-  function jsonItem(o) {
-    var r = normState({
-      id: o.id, name: o.name || o.title, aasmState: o.aasmState || o.state,
-      highBidAmount: firstDefined(o.highBidAmount, o.currentBid, o.current_bid, o.bidAmount),
-      minimumBidAmount: o.minimumBidAmount, bidsCount: o.bidsCount, bidderIds: o.bidderIds, extended: o.extended,
-      saleEndsAt: firstDefined(o.saleEndsAt, o.endsAt, o.ends_at, o.endTime), mainImage: o.mainImage
-    });
-    var u = firstDefined(o.url, o.path, o.href);
-    r.url = u ? absUrl(u) : null;
-    r.ends_at_approx = false;
-    return r;
-  }
-  // -> { items, format }. parseHtml(html) must return a document (DOMParser in the browser, JSDOM in tests).
-  function parsePageResponse(text, parseHtml) {
-    var t = (text || "").replace(/^\s+/, "");
-    if (t.charAt(0) === "{" || t.charAt(0) === "[") {
-      try {
-        var items = [];
-        findItemArrays(JSON.parse(t), [], 0).forEach(function (a) { a.filter(looksLikeItem).forEach(function (o) { items.push(jsonItem(o)); }); });
-        return { items: items, format: "json" };
-      } catch (e) { /* not JSON after all */ }
-    }
-    return { items: cardItems(parseHtml(htmlFromPossiblyEscaped(text || ""))), format: "html" };
-  }
-
-  // The page loads its own lots with a background request. Find it in the browser's resource list so the
-  // next page can be requested the same way.
-  function listRequestCandidates(entries) {
-    var seen = {}, out = [];
-    (entries || []).forEach(function (e) {
-      var n = e.name || "";
-      if (n.indexOf("https://www.ebth.com/") !== 0) return;
-      if (["fetch", "xmlhttprequest"].indexOf(e.initiatorType) < 0) return;
-      if (/\.(js|css|png|jpe?g|gif|svg|webp|woff2?|ico)(\?|$)/i.test(n)) return;
-      if (/analytics|segment|pubnub|braze|sentry|rollbar|beacon/i.test(n)) return;
-      if (!seen[n]) { seen[n] = true; out.push(n); }
-    });
-    function score(n) { return (/[?&]page=/.test(n) ? 4 : 0) + (/sale_id|category|status=|sort=/.test(n) ? 2 : 0) + (/items/.test(n) ? 1 : 0); }
-    out.sort(function (a, b) { return score(b) - score(a); });
-    return out.slice(0, 3);
-  }
-  function withPage(url, n) {
-    if (url.indexOf("{page}") >= 0) return url.replace("{page}", String(n));
-    var u = new URL(url); u.searchParams.set("page", String(n)); u.hash = "";
-    return u.toString();
-  }
-
-  // A HTML page, an HTML fragment, or a script/JSON string that embeds the cards' HTML
-  // Return an HTML string that cardItems can read.
-  function htmlFromPossiblyEscaped(text) {
-    if (text.indexOf("items-grid__item") < 0) return text;
-    if (text.indexOf('<a class="items-grid__item') >= 0 || text.indexOf("<a class='items-grid__item") >= 0) return text;
-    return text.replace(/\\u003c/gi, "<").replace(/\\u003e/gi, ">").replace(/\\u0026/gi, "&")
-               .replace(/\\"/g, '"').replace(/\\\//g, "/").replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
-  }
-
-  var WRONG_STYLE = [401, 404, 405, 406, 410, 422];
-
-  // Load the remaining pages of a paged list. fetchPage(n, variant) -> Promise<{status, doc, info}>.
-  // Timing and fetching are injected so this can be tested. Page 2 is tried with each request
-  // variant in turn until one returns new cards; that variant is then used for the rest. Stops on
-  // any error status, an empty page, or the cap. diag says what each attempt returned.
-  async function collectPages(o) {
-    var items = o.firstItems.slice(), seen = {}, pages = 1, status = 200, diag = [];
-    var variants = o.variants || [0], vi = 0;
-    items.forEach(function (i) { seen[i.item_id] = true; });
-    function merge(r) {
-      var added = 0;
-      (r.items || cardItems(r.doc)).forEach(function (c) { if (!seen[c.item_id]) { seen[c.item_id] = true; items.push(c); added++; } });
-      return added;
-    }
-    for (var p = 2; p <= o.maxPages; p++) {
-      if (o.itemCount && items.length >= o.itemCount) break;
-      var added = 0, r;
-      var tries = p === 2 ? variants.length : 1;
-      for (var k = 0; k < tries; k++) {
-        var v = p === 2 ? k : vi;
-        await o.sleep(o.delayMs());
-        r = await o.fetchPage(p, variants[v]);
-        pages++;
-        var lab = (variants[v] && variants[v].label) || "v" + v;
-        if (r.status >= 400) {
-          diag.push(lab + ":" + r.status);
-          if (WRONG_STYLE.indexOf(r.status) >= 0) continue;     // this request style is not accepted; try the next one
-          status = r.status; break;                             // 403, 429, 5xx: treat as a block
-        }
-        added = merge(r);
-        diag.push(lab + ":" + r.status + (r.info ? " " + r.info : "") + " new=" + added);
-        if (added > 0) { if (p === 2) vi = k; break; }
-      }
-      if (status >= 400 || added === 0) break;
-    }
-    return { items: items, pages: pages, status: status, variant: vi, diag: diag.join(" | ").slice(0, 900) };
-  }
-
-  // Headers worth replaying from the page's own request. Everything the browser sets itself is left out.
-  var SKIP_HEADERS = /^(cookie|host|user-agent|accept-encoding|accept-language|connection|content-length|origin|referer|priority|pragma|cache-control|upgrade-insecure-requests|te|sec-.*)$/i;
-  function replayableHeaders(list) {
-    var out = {};
-    var entries = Array.isArray(list) ? list.map(function (h) { return [h.name, h.value]; })
-                                      : Object.keys(list || {}).map(function (k) { return [k, list[k]]; });
-    entries.forEach(function (e) { if (e[0] && e[1] != null && !SKIP_HEADERS.test(e[0])) out[e[0]] = e[1]; });
-    return out;
-  }
-
-  // Scroll a page until it has loaded `target` lots, growth stops, or time runs out.
-  // count/scroll/sleep/now are injected so this can be tested.
-  async function scrollUntil(o) {
-    var start = o.now(), last = o.count(), lastGrowth = start;
-    while (o.now() - start < o.maxMs) {
-      if (o.target && o.count() >= o.target) break;
-      o.scroll();
-      await o.sleep(o.stepMs || 1500);
-      var c = o.count();
-      if (c > last) { last = c; lastGrowth = o.now(); }
-      else if (o.now() - lastGrowth >= o.idleMs) break;
-    }
-    return { count: o.count(), ms: o.now() - start };
   }
 
   function pageKind(doc, pathname) {
@@ -377,8 +238,7 @@
 
   var EBTH = { itemStates: itemStates, normState: normState, listItems: listItems, parseLot: parseLot,
                cardItems: cardItems, saleMeta: saleMeta, parseEndLabel: parseEndLabel, withEndTimes: withEndTimes,
-               collectPages: collectPages, htmlFromPossiblyEscaped: htmlFromPossiblyEscaped,
-               parsePageResponse: parsePageResponse, replayableHeaders: replayableHeaders, scrollUntil: scrollUntil, listRequestCandidates: listRequestCandidates, withPage: withPage, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
+               pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
   if (typeof module !== "undefined" && module.exports) module.exports = EBTH;
   else root.EBTH = EBTH;
 })(typeof globalThis !== "undefined" ? globalThis : this);
