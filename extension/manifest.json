@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "EBTH Watch",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Sends auction data from ebth.com pages you can already see to your own dashboard.",
   "permissions": [
     "alarms",

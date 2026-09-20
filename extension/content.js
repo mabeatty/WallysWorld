@@ -79,14 +79,32 @@
       var need = sale && sale.item_count && sale.item_count > cards.length;
       if (allowPaging && need && who && who.hint && who.hint.mode === "foreground") {
         // The site's own scrolling loads the lots (with whatever sign-in it needs); we only scroll and read.
+        // Scroll the way a wheel would: bring the last card into view (which moves whichever container scrolls),
+        // then push the page and every scrollable ancestor to the bottom.
+        var hp = (who.hint && who.hint.scroll) || {};
+        var pushScroll = function () {
+          var all = document.querySelectorAll(CARD), last = all[all.length - 1];
+          if (last) last.scrollIntoView({ block: "end" });
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          for (var el = last && last.parentElement; el; el = el.parentElement) {
+            if (el.scrollHeight > el.clientHeight + 20) el.scrollTop = el.scrollHeight;
+          }
+          window.dispatchEvent(new Event("scroll"));
+        };
+        var scrollers = 0;
+        for (var a = document.querySelector(CARD); a && a.parentElement; a = a.parentElement) {
+          if (a.scrollHeight > a.clientHeight + 20) scrollers++;
+        }
         var sc = await EBTH.scrollUntil({
-          target: sale.item_count, maxMs: 90000, idleMs: 9000, stepMs: 1500, now: Date.now, sleep: sleep,
+          target: sale.item_count, maxMs: hp.maxMs || 120000, idleMs: hp.idleMs || 15000, stepMs: hp.stepMs || 2000,
+          now: Date.now, sleep: sleep,
           count: function () { return document.querySelectorAll(CARD).length; },
-          scroll: function () { window.scrollTo(0, document.documentElement.scrollHeight); }
+          scroll: pushScroll
         });
         res = { items: EBTH.cardItems(document), pages: Math.max(1, Math.ceil(sc.count / Math.max(1, cards.length))), status: 200, diag: "" };
         payload.diag = res.items.length < sale.item_count
-          ? "scrolled to " + res.items.length + " of " + sale.item_count + " in " + Math.round(sc.ms / 1000) + "s" : null;
+          ? "scrolled to " + res.items.length + " of " + sale.item_count + " in " + Math.round(sc.ms / 1000) + "s; visible=" +
+            document.visibilityState + " scrollers=" + scrollers + " win=" + window.innerWidth + "x" + window.innerHeight : null;
       } else if (allowPaging && need) {
         var cool = (await chrome.storage.local.get({ pagingCooldownUntil: 0 })).pagingCooldownUntil;
         if (Date.now() < cool) {
