@@ -322,3 +322,25 @@ test("a partial sale page you open yourself does not reset the schedule for the 
   const next = await t.next(at(base, 46));
   assert.ok(!(next && next.url === "https://www.ebth.com/users/followed_items"), "followed list was just refreshed");
 });
+
+test("diagnostics are stored with the capture, and the paging hint reaches the extension", { skip }, async () => {
+  const t = await fresh();
+  await t.ingest(listPayload(), T0);
+  const long = "read 48 of 319. cand=[\"/api/items?page=1\"] " + "x".repeat(1200);
+  await t.ingest({ kind: "list", url: listJob.url, verdict: "ok", note: "short note", diag: long, items: [], lot: null, job: listJob }, at(T0, 40));
+  const r = await t.one("select note, length(diag) n, left(diag, 12) d from fetches order by id desc limit 1");
+  assert.deepEqual([r.note, r.n, r.d], ["short note", long.length, "read 48 of 3"]);
+  await t.ingest({ kind: "list", url: listJob.url, verdict: "ok", note: "", diag: "y".repeat(5000), items: [], lot: null, job: listJob }, at(T0, 41));
+  assert.equal((await t.one("select length(diag) n from fetches order by id desc limit 1")).n, 2000, "capped at 2000 characters");
+  const noDiag = await t.one("select diag from fetches order by id asc limit 1");
+  assert.equal(noDiag.diag, null);
+
+  await t.db.query("update lots set detail_done = true");         // so the next job is a list read
+  let job = await t.next(at(T0, 100));
+  assert.equal(job.kind, "list");
+  assert.ok("hint" in job && job.hint === null, "no hint by default");
+  await t.set("paging_hint", { urlTemplate: "https://www.ebth.com/api/items?sale_id=90479&page={page}", headers: { "X-Requested-With": "XMLHttpRequest" } });
+  job = await t.next(at(T0, 100));
+  assert.equal(job.hint.urlTemplate, "https://www.ebth.com/api/items?sale_id=90479&page={page}");
+  assert.equal(job.hint.headers["X-Requested-With"], "XMLHttpRequest");
+});

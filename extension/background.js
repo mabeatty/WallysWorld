@@ -66,7 +66,8 @@ async function handleCapture(payload, tabId) {
   const v = EBTH.verdictFrom(payload.sig, !!(job && job.requires_login));
   const ok = v[0] === "ok";
   const res = await rpc("ingest_page", { p_token: c.token, p: {
-    kind: payload.kind, url: payload.url, verdict: v[0], note: v[1] || payload.diag || "",
+    kind: payload.kind, url: payload.url, verdict: v[0], note: v[1] || (payload.diag || "").slice(0, 280),
+    diag: payload.diag || null,
     items: ok ? payload.items : [], lot: ok ? payload.lot : null,
     sale: ok ? payload.sale : null, pages: payload.pages || 1,
     job: job ? { kind: job.kind, url: job.url, item_id: job.item_id } : null } });
@@ -80,7 +81,8 @@ async function handleCapture(payload, tabId) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "whoami") {
     getPending().then((p) => sendResponse({
-      job: !!(p && sender.tab && p.tabId === sender.tab.id), kind: p && p.job && p.job.kind }));
+      job: !!(p && sender.tab && p.tabId === sender.tab.id), kind: p && p.job && p.job.kind,
+      hint: p && p.job ? p.job.hint || null : null }));
     return true;
   }
   if (msg.type === "capture" && sender.tab) {

@@ -189,14 +189,81 @@
     }
     return items.map(function (i, k) {
       var r = {}; for (var key in i) if (key !== "end_label") r[key] = i[key];
+      if (i.ends_at) return r;                       // exact time already known (e.g. from a JSON response)
       r.ends_at = ok && dates[k] ? dates[k].toISOString() : null;
       r.ends_at_approx = true;
       return r;
     });
   }
 
-  // A response for a later page may be an HTML page, an HTML fragment, or a script/JSON string that
-  // embeds the cards' HTML. Return an HTML string that cardItems can read.
+  // ---- later pages may come back as JSON. The shape is not known in advance, so look for arrays of
+  // objects that resemble the site's own item state (id, name, bid amount / end time) and map them.
+  function looksLikeItem(o) {
+    return !!o && typeof o === "object" && !Array.isArray(o) && /^\d+$/.test(String(o.id == null ? "" : o.id)) &&
+      (typeof o.name === "string" || typeof o.title === "string") &&
+      ("highBidAmount" in o || "currentBid" in o || "current_bid" in o || "bidAmount" in o || "saleEndsAt" in o || "aasmState" in o);
+  }
+  function findItemArrays(v, out, depth) {
+    if (v == null || depth > 6) return out;
+    if (Array.isArray(v)) {
+      var n = v.filter(looksLikeItem).length;
+      if (n > 0 && n >= v.length / 2) { out.push(v); return out; }
+      v.forEach(function (x) { findItemArrays(x, out, depth + 1); });
+    } else if (typeof v === "object") {
+      Object.keys(v).forEach(function (k) { findItemArrays(v[k], out, depth + 1); });
+    }
+    return out;
+  }
+  function firstDefined() { for (var i = 0; i < arguments.length; i++) if (arguments[i] != null) return arguments[i]; return null; }
+  function jsonItem(o) {
+    var r = normState({
+      id: o.id, name: o.name || o.title, aasmState: o.aasmState || o.state,
+      highBidAmount: firstDefined(o.highBidAmount, o.currentBid, o.current_bid, o.bidAmount),
+      minimumBidAmount: o.minimumBidAmount, bidsCount: o.bidsCount, bidderIds: o.bidderIds, extended: o.extended,
+      saleEndsAt: firstDefined(o.saleEndsAt, o.endsAt, o.ends_at, o.endTime), mainImage: o.mainImage
+    });
+    var u = firstDefined(o.url, o.path, o.href);
+    r.url = u ? absUrl(u) : null;
+    r.ends_at_approx = false;
+    return r;
+  }
+  // -> { items, format }. parseHtml(html) must return a document (DOMParser in the browser, JSDOM in tests).
+  function parsePageResponse(text, parseHtml) {
+    var t = (text || "").replace(/^\s+/, "");
+    if (t.charAt(0) === "{" || t.charAt(0) === "[") {
+      try {
+        var items = [];
+        findItemArrays(JSON.parse(t), [], 0).forEach(function (a) { a.filter(looksLikeItem).forEach(function (o) { items.push(jsonItem(o)); }); });
+        return { items: items, format: "json" };
+      } catch (e) { /* not JSON after all */ }
+    }
+    return { items: cardItems(parseHtml(htmlFromPossiblyEscaped(text || ""))), format: "html" };
+  }
+
+  // The page loads its own lots with a background request. Find it in the browser's resource list so the
+  // next page can be requested the same way.
+  function listRequestCandidates(entries) {
+    var seen = {}, out = [];
+    (entries || []).forEach(function (e) {
+      var n = e.name || "";
+      if (n.indexOf("https://www.ebth.com/") !== 0) return;
+      if (["fetch", "xmlhttprequest"].indexOf(e.initiatorType) < 0) return;
+      if (/\.(js|css|png|jpe?g|gif|svg|webp|woff2?|ico)(\?|$)/i.test(n)) return;
+      if (/analytics|segment|pubnub|braze|sentry|rollbar|beacon/i.test(n)) return;
+      if (!seen[n]) { seen[n] = true; out.push(n); }
+    });
+    function score(n) { return (/[?&]page=/.test(n) ? 4 : 0) + (/sale_id|category|status=|sort=/.test(n) ? 2 : 0) + (/items/.test(n) ? 1 : 0); }
+    out.sort(function (a, b) { return score(b) - score(a); });
+    return out.slice(0, 3);
+  }
+  function withPage(url, n) {
+    if (url.indexOf("{page}") >= 0) return url.replace("{page}", String(n));
+    var u = new URL(url); u.searchParams.set("page", String(n)); u.hash = "";
+    return u.toString();
+  }
+
+  // A HTML page, an HTML fragment, or a script/JSON string that embeds the cards' HTML
+  // Return an HTML string that cardItems can read.
   function htmlFromPossiblyEscaped(text) {
     if (text.indexOf("items-grid__item") < 0) return text;
     if (text.indexOf('<a class="items-grid__item') >= 0 || text.indexOf("<a class='items-grid__item") >= 0) return text;
@@ -212,9 +279,9 @@
     var items = o.firstItems.slice(), seen = {}, pages = 1, status = 200, diag = [];
     var variants = o.variants || [0], vi = 0;
     items.forEach(function (i) { seen[i.item_id] = true; });
-    function merge(doc) {
+    function merge(r) {
       var added = 0;
-      cardItems(doc).forEach(function (c) { if (!seen[c.item_id]) { seen[c.item_id] = true; items.push(c); added++; } });
+      (r.items || cardItems(r.doc)).forEach(function (c) { if (!seen[c.item_id]) { seen[c.item_id] = true; items.push(c); added++; } });
       return added;
     }
     for (var p = 2; p <= o.maxPages; p++) {
@@ -226,14 +293,15 @@
         await o.sleep(o.delayMs());
         r = await o.fetchPage(p, variants[v]);
         pages++;
-        if (r.status >= 400) { status = r.status; diag.push("v" + v + ":" + r.status); break; }
-        added = merge(r.doc);
-        diag.push("v" + v + ":" + r.status + (r.info ? " " + r.info : "") + " new=" + added);
+        var lab = (variants[v] && variants[v].label) || "v" + v;
+        if (r.status >= 400) { status = r.status; diag.push(lab + ":" + r.status); break; }
+        added = merge(r);
+        diag.push(lab + ":" + r.status + (r.info ? " " + r.info : "") + " new=" + added);
         if (added > 0) { if (p === 2) vi = k; break; }
       }
       if (status >= 400 || added === 0) break;
     }
-    return { items: items, pages: pages, status: status, variant: vi, diag: diag.join(" | ").slice(0, 280) };
+    return { items: items, pages: pages, status: status, variant: vi, diag: diag.join(" | ").slice(0, 900) };
   }
 
   function pageKind(doc, pathname) {
@@ -278,7 +346,8 @@
 
   var EBTH = { itemStates: itemStates, normState: normState, listItems: listItems, parseLot: parseLot,
                cardItems: cardItems, saleMeta: saleMeta, parseEndLabel: parseEndLabel, withEndTimes: withEndTimes,
-               collectPages: collectPages, htmlFromPossiblyEscaped: htmlFromPossiblyEscaped, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
+               collectPages: collectPages, htmlFromPossiblyEscaped: htmlFromPossiblyEscaped,
+               parsePageResponse: parsePageResponse, listRequestCandidates: listRequestCandidates, withPage: withPage, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
   if (typeof module !== "undefined" && module.exports) module.exports = EBTH;
   else root.EBTH = EBTH;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -185,3 +185,67 @@ test("script or JSON responses that embed the card markup are unescaped", { skip
   const plain = "<a class=\"items-grid__item item\" href=\"https://www.ebth.com/items/1-x\"></a>";
   assert.equal(EBTH.htmlFromPossiblyEscaped(plain), plain, "normal HTML is left alone");
 });
+
+const parseHtml = (h) => new JSDOM(h).window.document;
+
+test("JSON responses: item arrays are found wherever they sit and mapped like the site's own item state", () => {
+  const body = { meta: { page: 2 }, data: { results: [
+    { id: 14568274, name: "Rolex", aasmState: "for_sale", highBidAmount: 3300, minimumBidAmount: 3350, bidsCount: 40,
+      bidderIds: [1, 2, 2], saleEndsAt: "2026-09-20T20:03:20.000-04:00", path: "/items/14568274-rolex" },
+    { id: "14600826", title: "Postal covers", currentBid: "3.0", saleEndsAt: "2026-09-20T20:04:20.000-04:00" }] }, other: [{ id: 1 }] };
+  const r = EBTH.parsePageResponse(JSON.stringify(body), parseHtml);
+  assert.equal(r.format, "json");
+  assert.equal(r.items.length, 2);
+  const [a, b] = r.items;
+  assert.deepEqual([a.item_id, a.high_bid, a.bids_count, a.unique_bidders, a.state], ["14568274", 3300, 40, 2, "for_sale"]);
+  assert.equal(a.ends_at, "2026-09-20T20:03:20.000-04:00");
+  assert.equal(a.ends_at_approx, false);
+  assert.equal(a.url, "https://www.ebth.com/items/14568274-rolex");
+  assert.deepEqual([b.item_id, b.name, b.high_bid], ["14600826", "Postal covers", "3.0"]);
+  assert.equal(EBTH.parsePageResponse("{\"results\":[]}", parseHtml).items.length, 0);
+});
+
+test("responses that are HTML, or a script embedding HTML, still work; exact times survive withEndTimes", { skip: skipSale }, () => {
+  const cards = EBTH.cardItems(saleDoc()).slice(0, 3);
+  const html = cards.map((c) => `<a class="items-grid__item item" href="${c.url}"><h4 class="item__title" title="${c.name}">${c.name}</h4><span class="item__bid-amount">$${c.high_bid}</span></a>`).join("");
+  assert.equal(EBTH.parsePageResponse(html, parseHtml).items.length, 3);
+  const js = "$(x).append(" + JSON.stringify(html).replace(/</g, "\\u003c") + ")";
+  assert.equal(EBTH.parsePageResponse(js, parseHtml).items.length, 3);
+  const mixed = [{ item_id: "1", ends_at: "2026-09-21T00:03:20.000Z", ends_at_approx: false }, { item_id: "2", end_label: "Sunday, September 20th 2026 @ 7:00pm" }];
+  const out = EBTH.withEndTimes(mixed, "2026-09-20T20:00:00.000-04:00");
+  assert.equal(out[0].ends_at, "2026-09-21T00:03:20.000Z");
+  assert.equal(out[0].ends_at_approx, false);
+  assert.equal(out[1].ends_at, "2026-09-21T00:00:00.000Z");
+});
+
+test("the page's own list request is found in the browser's resource list", () => {
+  const entries = [
+    { name: "https://www.ebth.com/assets/app.js", initiatorType: "script" },
+    { name: "https://www.ebth.com/api/items?sale_id=90479&page=1&sort=ending", initiatorType: "fetch" },
+    { name: "https://www.ebth.com/collect/segment", initiatorType: "xmlhttprequest" },
+    { name: "https://cdn.other.com/x", initiatorType: "fetch" },
+    { name: "https://www.ebth.com/api/user/followed", initiatorType: "xmlhttprequest" },
+    { name: "https://www.ebth.com/img/a.png", initiatorType: "fetch" },
+  ];
+  const c = EBTH.listRequestCandidates(entries);
+  assert.equal(c[0], "https://www.ebth.com/api/items?sale_id=90479&page=1&sort=ending", "most list-like first");
+  assert.ok(!c.some((u) => /segment|assets|png|other/.test(u)));
+  assert.equal(EBTH.withPage(c[0], 3), "https://www.ebth.com/api/items?sale_id=90479&page=3&sort=ending");
+  assert.equal(EBTH.withPage("https://www.ebth.com/api/items?sale_id=1", 2), "https://www.ebth.com/api/items?sale_id=1&page=2");
+  assert.equal(EBTH.withPage("https://www.ebth.com/x/{page}/items", 4), "https://www.ebth.com/x/4/items");
+});
+
+test("paging with parsed items: request styles are labelled in the diagnostics", async () => {
+  const mk = (from, n) => Array.from({ length: n }, (_, i) => ({ item_id: String(from + i), name: "x", url: null, high_bid: 1, end_label: null }));
+  const first = mk(1, 48), pagesData = { 2: mk(49, 48), 3: mk(97, 3) };
+  const seenStyles = [];
+  const r = await EBTH.collectPages({
+    firstItems: first, itemCount: 99, maxPages: 20, variants: [{ label: "c0", url: "a" }, { label: "c0j", url: "a" }],
+    sleep: async () => {}, delayMs: () => 0,
+    fetchPage: async (n, v) => { seenStyles.push(v.label); return v.label === "c0j" ? { status: 200, items: pagesData[n] || [], info: "json 9kB json=48" } : { status: 200, items: [], info: "html 2kB html=0 s=<empty>" }; }
+  });
+  assert.equal(r.items.length, 99);
+  assert.equal(r.variant, 1);
+  assert.deepEqual(seenStyles, ["c0", "c0j", "c0j"]);
+  assert.match(r.diag, /^c0:200 html 2kB html=0 s=<empty> new=0 \| c0j:200 json 9kB json=48 new=48 \| c0j:200/);
+});

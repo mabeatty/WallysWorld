@@ -1,12 +1,17 @@
 // Runs on ebth.com pages. Reads whitelisted auction fields and hands them to the background worker.
 // Pages you browse yourself are only captured if they are lot or list pages (never account,
 // cart or checkout pages). Pages the worker opens for a scheduled job are always reported so
-// blocks and logouts are noticed. For a scheduled sale page it also reads the sale's later
-// pages, slowly, the way scrolling would. On a sale page you browse yourself, scrolling loads
-// more lots and they are captured as they appear.
+// blocks and logouts are noticed.
+//
+// Sale pages: the page loads its own lots with a background request. For a scheduled read this script
+// finds that request in the browser's resource list and asks for the next pages the same way, slowly.
+// If that does not work it tries a few other request styles, and it reports what it saw so the
+// database side can be adjusted without touching the extension. On a sale page you browse yourself,
+// scrolling loads more lots and they are captured as they appear.
 (async function () {
   if (window.top !== window) return;
   var MAX_PAGES = 20;
+  var COOLDOWN_MS = 60 * 60 * 1000;      // after a total paging failure, don't probe again for an hour
   var who;
   try { who = await chrome.runtime.sendMessage({ type: "whoami" }); } catch (e) { return; }
   var isJob = !!(who && who.job);
@@ -16,6 +21,7 @@
 
   var CARD = 'a.items-grid__item[href*="/items/"]';
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var parseHtml = function (h) { return new DOMParser().parseFromString(h, "text/html"); };
 
   // A scheduled sale page runs in a background tab, where the lot cards can appear a little after the
   // page finishes loading. Give them time to show up before reading.
@@ -27,23 +33,29 @@
   var nav = performance.getEntriesByType("navigation")[0];
   var status = nav && nav.responseStatus ? nav.responseStatus : 0;
 
-  // Different ways the site might answer a request for a later page; the first that returns new lots is used.
-  var VARIANTS = [
-    {},
-    { "X-Requested-With": "XMLHttpRequest", "Accept": "text/html, */*; q=0.01" },
-    { "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01" }
-  ];
-  async function fetchPage(n, headers) {
-    var u = new URL(location.href);
-    u.searchParams.set("page", String(n));
-    u.hash = "";
-    var r = await fetch(u.toString(), { credentials: "include", headers: headers || {} });
+  var XHR_HTML = { "X-Requested-With": "XMLHttpRequest", "Accept": "text/html, */*; q=0.01" };
+  var XHR_JSON = { "X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, */*; q=0.01" };
+
+  function requestStyles() {
+    var v = [];
+    if (who && who.hint && who.hint.urlTemplate) v.push({ label: "hint", url: who.hint.urlTemplate, headers: who.hint.headers || {} });
+    EBTH.listRequestCandidates(performance.getEntriesByType("resource")).slice(0, 2).forEach(function (u, i) {
+      v.push({ label: "c" + i, url: u, headers: {} });
+      v.push({ label: "c" + i + "j", url: u, headers: XHR_JSON });
+    });
+    v.push({ label: "pg", url: location.href, headers: {} });
+    v.push({ label: "pgx", url: location.href, headers: XHR_HTML });
+    v.push({ label: "pgj", url: location.href, headers: XHR_JSON });
+    return v;
+  }
+  async function fetchPage(n, style) {
+    var r = await fetch(EBTH.withPage(style.url, n), { credentials: "include", headers: style.headers || {} });
     var text = await r.text();
-    var html = EBTH.htmlFromPossiblyEscaped(text);
-    var doc = new DOMParser().parseFromString(html, "text/html");
+    var parsed = EBTH.parsePageResponse(text, parseHtml);
     var ct = (r.headers.get("content-type") || "").split(";")[0].split("/").pop();
-    return { status: r.status, doc: doc,
-             info: ct + " " + Math.round(text.length / 1000) + "kB items=" + (text.match(/\/items\/\d+-/g) || []).length };
+    var info = ct + " " + Math.round(text.length / 1000) + "kB " + parsed.format + "=" + parsed.items.length;
+    if (!parsed.items.length && style.label !== "pg") info += " s=" + text.slice(0, 70).replace(/\s+/g, " ");
+    return { status: r.status, items: parsed.items, info: info };
   }
 
   async function build(allowPaging) {
@@ -62,18 +74,28 @@
       var sale = EBTH.saleMeta(document);
       payload.sale = sale ? { id: sale.id, name: sale.name } : null;
       var res = { items: cards, pages: 1, status: 200, diag: "" };
-      if (allowPaging && sale && sale.item_count && sale.item_count > cards.length) {
-        res = await EBTH.collectPages({
-          firstItems: cards, itemCount: sale.item_count, maxPages: MAX_PAGES, variants: VARIANTS,
-          sleep: sleep, delayMs: function () { return 4000 + Math.random() * 4000; }, fetchPage: fetchPage
-        });
+      var need = sale && sale.item_count && sale.item_count > cards.length;
+      if (allowPaging && need) {
+        var cool = (await chrome.storage.local.get({ pagingCooldownUntil: 0 })).pagingCooldownUntil;
+        if (Date.now() < cool) {
+          payload.diag = "paging paused after a failed attempt; retrying after " + new Date(cool).toLocaleTimeString();
+        } else {
+          var styles = requestStyles();
+          res = await EBTH.collectPages({
+            firstItems: cards, itemCount: sale.item_count, maxPages: MAX_PAGES, variants: styles,
+            sleep: sleep, delayMs: function () { return 4000 + Math.random() * 4000; }, fetchPage: fetchPage
+          });
+          var cand = EBTH.listRequestCandidates(performance.getEntriesByType("resource"))
+            .map(function (u) { return u.replace("https://www.ebth.com", "").slice(0, 90); });
+          payload.diag = "read " + (res.items.length) + " of " + sale.item_count + ". cand=" + JSON.stringify(cand) + " " + res.diag;
+          if (res.items.length <= cards.length && res.status < 400) {
+            await chrome.storage.local.set({ pagingCooldownUntil: Date.now() + COOLDOWN_MS });
+          }
+        }
       }
       if (res.status >= 400) payload.sig.status = res.status;
       payload.items = EBTH.withEndTimes(res.items, sale && sale.ends_at);
       payload.pages = res.pages;
-      if (sale && sale.item_count && payload.items.length < sale.item_count && allowPaging) {
-        payload.diag = "read " + payload.items.length + " of " + sale.item_count + " lots. " + res.diag;
-      }
     }
     if (kind === "list" && payload.items.length === 0) {
       payload.diag = "no lot cards found; grid=" + !!document.getElementById("items_grid") +
@@ -87,8 +109,7 @@
     catch (e) { /* worker asleep or extension reloaded */ }
   }
 
-  var first = await build(isJob);
-  await send(first);
+  await send(await build(isJob));
 
   // Sale page you are browsing: as scrolling loads more lots, capture them too.
   if (!isJob && kind === "list" && document.querySelector(CARD)) {
