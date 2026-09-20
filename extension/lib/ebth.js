@@ -133,11 +133,91 @@
     };
   }
 
+  // ---- sale / category pages: lot cards carry title, current bid and end time, but no bid counts
+  var MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+
+  function cardItems(doc) {
+    var out = [], seen = {};
+    doc.querySelectorAll('a.items-grid__item[href*="/items/"]').forEach(function (a) {
+      var m = (a.getAttribute("href") || "").match(/\/items\/(\d+)-/);
+      if (!m || seen[m[1]]) return;
+      seen[m[1]] = true;
+      var t = a.querySelector(".item__title");
+      var bid = a.querySelector(".item__bid-amount");
+      var tm = a.querySelector("time.time-remaining");
+      out.push({
+        item_id: m[1],
+        name: t ? (t.getAttribute("title") || clean(t.textContent)) : null,
+        url: absUrl(a.getAttribute("href")),
+        state: null, bids_count: null, unique_bidders: null, bidder_ids: [], extended: false,
+        high_bid: bid ? num(bid.textContent) : null,
+        end_label: tm ? tm.getAttribute("title") : null
+      });
+    });
+    return out;
+  }
+
+  function saleMeta(doc) {
+    var el = doc.querySelector('[data-react-class="sale_header/Application"]');
+    if (!el) return null;
+    var d;
+    try { d = JSON.parse(el.getAttribute("data-react-props")); } catch (e) { return null; }
+    return { id: d.saleId == null ? null : String(d.saleId), name: d.name || null,
+             item_count: d.itemCount == null ? null : d.itemCount, ends_at: d.saleEndsAt || null };
+  }
+
+  // "Sunday, September 20th 2026 @ 7:03pm" -> Date in the browser's time zone (minute precision)
+  function parseEndLabel(label) {
+    var m = (label || "").match(/([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})\s*@\s*(\d{1,2}):(\d{2})\s*(am|pm)/i);
+    if (!m) return null;
+    var mon = MONTHS.indexOf(m[1].toLowerCase());
+    if (mon < 0) return null;
+    var h = parseInt(m[4], 10) % 12 + (m[6].toLowerCase() === "pm" ? 12 : 0);
+    return new Date(parseInt(m[3], 10), mon, parseInt(m[2], 10), h, parseInt(m[5], 10), 0, 0);
+  }
+
+  // Attach ISO end times to card items. Cards only show minutes, so they are flagged approximate,
+  // and they are dropped entirely unless the earliest one lines up with the sale's own end time
+  // (a guard against the page showing times in a time zone other than this browser's).
+  function withEndTimes(items, saleEndsAt) {
+    var dates = items.map(function (i) { return parseEndLabel(i.end_label); });
+    var valid = dates.filter(Boolean);
+    var ok = valid.length > 0;
+    if (ok && saleEndsAt) {
+      var min = Math.min.apply(null, valid.map(function (d) { return d.getTime(); }));
+      ok = Math.abs(min - new Date(saleEndsAt).getTime()) <= 20 * 60000;
+    }
+    return items.map(function (i, k) {
+      var r = {}; for (var key in i) if (key !== "end_label") r[key] = i[key];
+      r.ends_at = ok && dates[k] ? dates[k].toISOString() : null;
+      r.ends_at_approx = true;
+      return r;
+    });
+  }
+
+  // Load the remaining pages of a paged list. fetchPage(n) -> Promise<{status, doc}>; both timing
+  // and fetching are injected so this can be tested. Stops on any error status, an empty page, or the cap.
+  async function collectPages(o) {
+    var items = o.firstItems.slice(), seen = {}, pages = 1, status = 200;
+    items.forEach(function (i) { seen[i.item_id] = true; });
+    for (var p = 2; p <= o.maxPages; p++) {
+      if (o.itemCount && items.length >= o.itemCount) break;
+      await o.sleep(o.delayMs());
+      var r = await o.fetchPage(p);
+      pages++;
+      if (r.status >= 400) { status = r.status; break; }
+      var added = 0;
+      cardItems(r.doc).forEach(function (c) { if (!seen[c.item_id]) { seen[c.item_id] = true; items.push(c); added++; } });
+      if (added === 0) break;
+    }
+    return { items: items, pages: pages, status: status };
+  }
+
   function pageKind(doc, pathname) {
     var ogType = doc.querySelector('meta[name="og:type"]');
     if (pathname.indexOf("/items/") === 0 && ogType && ogType.getAttribute("content") === "product" &&
         doc.querySelector('[itemprop="description"] table')) return "lot";
-    if (itemStates(doc).size === 0) return null;
+    if (itemStates(doc).size === 0 && !doc.querySelector('a.items-grid__item[href*="/items/"]')) return null;
     if (ALLOW_EXACT.indexOf(pathname) >= 0) return "list";
     for (var i = 0; i < DENY_PREFIXES.length; i++) if (pathname.indexOf(DENY_PREFIXES[i]) === 0) return null;
     return "list";
@@ -147,7 +227,7 @@
     var text = doc.body ? doc.body.textContent : "";
     return {
       status: status || 0,
-      hasState: itemStates(doc).size > 0,
+      hasState: itemStates(doc).size > 0 || !!doc.querySelector('a.items-grid__item[href*="/items/"]'),
       title: doc.title || "",
       bodyStart: text.slice(0, 1500),
       signedIn: text.indexOf("Sign Out") >= 0 || doc.documentElement.outerHTML.indexOf("Sign Out") >= 0
@@ -174,7 +254,8 @@
   }
 
   var EBTH = { itemStates: itemStates, normState: normState, listItems: listItems, parseLot: parseLot,
-               pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
+               cardItems: cardItems, saleMeta: saleMeta, parseEndLabel: parseEndLabel, withEndTimes: withEndTimes,
+               collectPages: collectPages, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
   if (typeof module !== "undefined" && module.exports) module.exports = EBTH;
   else root.EBTH = EBTH;
 })(typeof globalThis !== "undefined" ? globalThis : this);

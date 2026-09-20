@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATION, HAVE_FIXTURES, LOT_ID, lotDoc, listDoc, payload } from "./helpers.mjs";
+import { MIGRATION, HAVE_FIXTURES, HAVE_SALE, SALE_URL, LOT_ID, lotDoc, listDoc, saleDoc, salePayload, payload } from "./helpers.mjs";
 
 const skip = !HAVE_FIXTURES && "save a lot page (filename contains Rolex) and the Followed Items page into tests/fixtures";
 const LOT_PATH = "/items/14568274-1970-rolex";
@@ -218,4 +218,92 @@ test("lockdown: the extension's key can call the three functions and nothing els
   await assert.rejects(() => t.db.query("select next_job('wrong-token')"), /invalid token/);
   await assert.rejects(() => t.db.query("select ingest_page('wrong-token','{}'::jsonb)"), /invalid token/);
   await t.db.exec("reset role");
+});
+
+const skipSale = !(HAVE_FIXTURES && HAVE_SALE) && "save the sale page into tests/fixtures";
+const saleJob = { kind: "list", url: SALE_URL, item_id: null, requires_login: false };
+
+test("sale page: hundreds of lots stored cheaply; only followed lots get detail and close-out loads", { skip: skipSale }, async () => {
+  const t = await fresh();
+  const t1 = "2026-09-20T19:45:00Z";
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), t1);
+  assert.equal(await t.count("lots"), 318);
+  assert.equal(await t.count("snapshots"), 318);
+  assert.equal(await t.count("lots", "tracked"), 0, "sale lots are not tracked by default");
+  assert.equal(await t.count("lots", "ends_at is not null"), 318);
+  assert.equal(await t.count("lots", "sale_id = '90479'"), 318);
+  const first = await t.one("select min(ends_at) e from lots");
+  assert.equal(new Date(first.e).toISOString(), "2026-09-21T00:00:00.000Z");
+
+  await t.ingest(listPayload(), at(t1, 1));                     // your followed lots become tracked
+  assert.equal(await t.count("lots", "tracked"), 20);
+  const followed = new Set((await t.db.query("select item_id from lots where tracked")).rows.map((r) => r.item_id));
+  for (let i = 0; i < 40; i++) {
+    const j = await t.next(at(t1, 2 + i));
+    if (!j || j.kind !== "detail") break;
+    assert.ok(followed.has(j.item_id), "detail jobs are only for tracked lots");
+    await t.ingest({ kind: "lot", url: j.url, verdict: "gone", note: "", items: [], lot: null, job: { kind: "detail", url: j.url, item_id: j.item_id } }, at(t1, 2 + i));
+  }
+  const late = "2026-09-21T00:30:00Z";                          // after most of the sale has closed
+  const j = await t.next(late);
+  assert.ok(j && (j.kind !== "closeout" || followed.has(j.item_id)), "no close-out page loads for untracked lots");
+});
+
+test("sale page: minute-rounded card times never overwrite an exact end time", { skip: skipSale }, async () => {
+  const t = await fresh();
+  await t.ingest(listPayload(), T0);                            // exact: 20:03:20 ET
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), at(T0, 5));
+  let r = await t.one("select ends_at e, closeout_tries n from lots where item_id=$1", [LOT_ID]);
+  assert.equal(new Date(r.e).toISOString(), "2026-09-21T00:03:20.000Z", "exact time kept");
+  await t.db.query("update lots set closeout_tries=2 where item_id=$1", [LOT_ID]);
+  await t.ingest(salePayload(saleDoc(), { job: saleJob }), at(T0, 40));
+  r = await t.one("select closeout_tries n from lots where item_id=$1", [LOT_ID]);
+  assert.equal(r.n, 2, "rounding noise does not reset the close-out clock");
+  const moved = salePayload(saleDoc(), { job: saleJob, mutate: (p) => { p.items.find((i) => i.item_id === LOT_ID).ends_at = "2026-09-21T00:08:00.000Z"; } });
+  await t.ingest(moved, at(T0, 50));                            // a real extension: five minutes later
+  r = await t.one("select ends_at e, closeout_tries n from lots where item_id=$1", [LOT_ID]);
+  assert.equal(new Date(r.e).toISOString(), "2026-09-21T00:08:00.000Z");
+  assert.equal(r.n, 0, "a real move resets it");
+});
+
+test("sale page: the lot view keeps bid counts from lot pages while showing the newest price", { skip: skipSale }, async () => {
+  const t = await fresh();
+  await t.ingest(listPayload(), T0);                            // 40 bids, 13 bidders, $3,300
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, mutate: (p) => { p.items.find((i) => i.item_id === LOT_ID).high_bid = 3400; } }), at(T0, 60));
+  const r = await t.one("select high_bid, bids_count, unique_bidders from lot_latest where item_id=$1", [LOT_ID]);
+  assert.deepEqual([Number(r.high_bid), r.bids_count, r.unique_bidders], [3400, 40, 13]);
+});
+
+test("pages count toward the daily cap, so a big sale refresh uses more of it", { skip: skipSale }, async () => {
+  const t = await fresh({ daily_request_cap: 20 });
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), T0);     // 15 pages
+  assert.ok(await t.next(at(T0, 10)), "15 of 20 used");
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 14 }), at(T0, 20));
+  assert.equal(await t.next(at(T0, 30)), null, "30 of 20 used");
+});
+
+test("sale pages refresh every 10 minutes near closing time, other lists every 5", { skip: skipSale }, async () => {
+  const t = await fresh();
+  const base = "2026-09-20T23:20:00Z";                          // first sale lots close at 00:00Z, 40 minutes away
+  await t.ingest(salePayload(saleDoc(), { job: saleJob }), base);
+  await t.ingest(listPayload(), at(base, 0.1));
+  const early = await t.next(at(base, 7));
+  assert.equal(early.url, "https://www.ebth.com/users/followed_items", "followed list is due at 5 minutes; sale is not due until 10");
+  await t.ingest(listPayload(), at(base, 8));
+  const due = await t.next(at(base, 11));
+  assert.equal(due.url, SALE_URL);
+  assert.equal(due.kind, "list");
+});
+
+test("adding a sale or category page from the dashboard sets the slower near-close cadence", { skip }, async () => {
+  const t = await fresh();
+  const dash = (await t.one("select value #>> '{}' v from settings where key='dashboard_token'")).v;
+  await t.db.exec("set role anon");
+  await t.db.query("select dash_add_seed($1,$2,false)", [dash, "https://www.ebth.com/categories/4228-sterling-silver-auctions"]);
+  await t.db.query("select dash_add_seed($1,$2,true)", [dash, "https://www.ebth.com/users/followed_items?ref=x"]);
+  await t.db.exec("reset role");
+  const cat = await t.one("select hot_interval_min h from seeds where name = 'categories-4228-sterling-silver-auctions'");
+  assert.equal(cat.h, 10);
+  const other = await t.one("select hot_interval_min h from seeds where name = 'users-followed-items'");
+  assert.equal(other.h, null);
 });

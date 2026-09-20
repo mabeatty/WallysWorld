@@ -4,6 +4,7 @@
 importScripts("lib/ebth.js");
 
 const JOB_TIMEOUT_MS = 90000;
+const LIST_JOB_TIMEOUT_MS = 300000;   // sale pages read several pages, slowly
 
 chrome.runtime.onInstalled.addListener(() => chrome.alarms.create("tick", { periodInMinutes: 1 }));
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create("tick", { periodInMinutes: 1 }));
@@ -32,7 +33,7 @@ async function tick() {
   if (!c.token || !c.enabled) return;
   const pending = await getPending();
   if (pending) {
-    if (Date.now() - pending.startedAt < JOB_TIMEOUT_MS) return;
+    if (Date.now() - pending.startedAt < (pending.job.kind === "list" ? LIST_JOB_TIMEOUT_MS : JOB_TIMEOUT_MS)) return;
     return failPending(pending, c);
   }
   const job = await rpc("next_job", { p_token: c.token });
@@ -67,6 +68,7 @@ async function handleCapture(payload, tabId) {
   const res = await rpc("ingest_page", { p_token: c.token, p: {
     kind: payload.kind, url: payload.url, verdict: v[0], note: v[1],
     items: ok ? payload.items : [], lot: ok ? payload.lot : null,
+    sale: ok ? payload.sale : null, pages: payload.pages || 1,
     job: job ? { kind: job.kind, url: job.url, item_id: job.item_id } : null } });
   if (job) {
     await clearPending();
