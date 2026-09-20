@@ -11,8 +11,7 @@ const require = createRequire(import.meta.url);
 export const EBTH = require("../extension/lib/ebth.js");
 const mig = (f) => fs.readFileSync(path.join(here, "../supabase/migrations", f), "utf8");
 export const MIGRATION_0001 = mig("0001_init.sql");
-export const MIGRATION = fs.existsSync(path.join(here, "../supabase/migrations/0002_breadth.sql"))
-  ? MIGRATION_0001 + "\n" + mig("0002_breadth.sql") : MIGRATION_0001;
+export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql")].join("\n");
 
 const fx = path.join(here, "fixtures");
 const find = (re) => fs.readdirSync(fx).filter((f) => re.test(f)).map((f) => path.join(fx, f))[0];

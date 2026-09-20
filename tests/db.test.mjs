@@ -307,3 +307,18 @@ test("adding a sale or category page from the dashboard sets the slower near-clo
   const other = await t.one("select hot_interval_min h from seeds where name = 'users-followed-items'");
   assert.equal(other.h, null);
 });
+
+test("a partial sale page you open yourself does not reset the schedule for the full read", { skip: skipSale }, async () => {
+  const t = await fresh();
+  const base = "2026-09-20T19:00:00Z";                          // far from any close: regular 30-minute cadence
+  await t.ingest(salePayload(saleDoc(), { job: saleJob, extraPages: 6 }), base);
+  await t.ingest(listPayload(), at(base, 1));                    // followed list, fetched by a job
+  await t.db.query("update lots set detail_done = true");        // keep detail loads out of this test
+  await t.ingest(listPayload(), at(base, 25));                   // keep the followed list fresh so only the sale is due
+  await t.ingest(salePayload(saleDoc(), { job: null }), at(base, 29));      // you browse the sale: page 1 only
+  const due = await t.next(at(base, 31));
+  assert.equal(due.url, SALE_URL, "the full read is still due 30 minutes after the last full read");
+  await t.ingest(listPayload(null), at(base, 45));               // a followed-items page you open yourself still counts
+  const next = await t.next(at(base, 46));
+  assert.ok(!(next && next.url === "https://www.ebth.com/users/followed_items"), "followed list was just refreshed");
+});

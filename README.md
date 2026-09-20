@@ -5,7 +5,7 @@ Watches auction lots on ebth.com, records every bid change and every closing pri
 | Folder | What it is |
 |---|---|
 | `extension/` | Chrome extension. The only part that touches ebth.com. It runs in your own signed-in browser. |
-| `supabase/migrations/` | The database, applied in order: `0001_init.sql` (tables, security, functions) then `0002_breadth.sql` (sale and category pages, tracked lots). |
+| `supabase/migrations/` | The database, applied in order: `0001_init.sql` (tables, security, functions) then `0002_breadth.sql` (sale and category pages, tracked lots), then `0003_full_reads_only.sql`. |
 | `app/`, `lib/`, `middleware.ts` | The dashboard (Next.js, deployed on Vercel). |
 | `tests/` | Automated checks for the page reader and the database logic. |
 
