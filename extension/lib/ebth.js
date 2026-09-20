@@ -195,22 +195,45 @@
     });
   }
 
-  // Load the remaining pages of a paged list. fetchPage(n) -> Promise<{status, doc}>; both timing
-  // and fetching are injected so this can be tested. Stops on any error status, an empty page, or the cap.
+  // A response for a later page may be an HTML page, an HTML fragment, or a script/JSON string that
+  // embeds the cards' HTML. Return an HTML string that cardItems can read.
+  function htmlFromPossiblyEscaped(text) {
+    if (text.indexOf("items-grid__item") < 0) return text;
+    if (text.indexOf('<a class="items-grid__item') >= 0 || text.indexOf("<a class='items-grid__item") >= 0) return text;
+    return text.replace(/\\u003c/gi, "<").replace(/\\u003e/gi, ">").replace(/\\u0026/gi, "&")
+               .replace(/\\"/g, '"').replace(/\\\//g, "/").replace(/\\n/g, "\n").replace(/\\\\/g, "\\");
+  }
+
+  // Load the remaining pages of a paged list. fetchPage(n, variant) -> Promise<{status, doc, info}>.
+  // Timing and fetching are injected so this can be tested. Page 2 is tried with each request
+  // variant in turn until one returns new cards; that variant is then used for the rest. Stops on
+  // any error status, an empty page, or the cap. diag says what each attempt returned.
   async function collectPages(o) {
-    var items = o.firstItems.slice(), seen = {}, pages = 1, status = 200;
+    var items = o.firstItems.slice(), seen = {}, pages = 1, status = 200, diag = [];
+    var variants = o.variants || [0], vi = 0;
     items.forEach(function (i) { seen[i.item_id] = true; });
+    function merge(doc) {
+      var added = 0;
+      cardItems(doc).forEach(function (c) { if (!seen[c.item_id]) { seen[c.item_id] = true; items.push(c); added++; } });
+      return added;
+    }
     for (var p = 2; p <= o.maxPages; p++) {
       if (o.itemCount && items.length >= o.itemCount) break;
-      await o.sleep(o.delayMs());
-      var r = await o.fetchPage(p);
-      pages++;
-      if (r.status >= 400) { status = r.status; break; }
-      var added = 0;
-      cardItems(r.doc).forEach(function (c) { if (!seen[c.item_id]) { seen[c.item_id] = true; items.push(c); added++; } });
-      if (added === 0) break;
+      var added = 0, r;
+      var tries = p === 2 ? variants.length : 1;
+      for (var k = 0; k < tries; k++) {
+        var v = p === 2 ? k : vi;
+        await o.sleep(o.delayMs());
+        r = await o.fetchPage(p, variants[v]);
+        pages++;
+        if (r.status >= 400) { status = r.status; diag.push("v" + v + ":" + r.status); break; }
+        added = merge(r.doc);
+        diag.push("v" + v + ":" + r.status + (r.info ? " " + r.info : "") + " new=" + added);
+        if (added > 0) { if (p === 2) vi = k; break; }
+      }
+      if (status >= 400 || added === 0) break;
     }
-    return { items: items, pages: pages, status: status };
+    return { items: items, pages: pages, status: status, variant: vi, diag: diag.join(" | ").slice(0, 280) };
   }
 
   function pageKind(doc, pathname) {
@@ -255,7 +278,7 @@
 
   var EBTH = { itemStates: itemStates, normState: normState, listItems: listItems, parseLot: parseLot,
                cardItems: cardItems, saleMeta: saleMeta, parseEndLabel: parseEndLabel, withEndTimes: withEndTimes,
-               collectPages: collectPages, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
+               collectPages: collectPages, htmlFromPossiblyEscaped: htmlFromPossiblyEscaped, pageKind: pageKind, signals: signals, verdictFrom: verdictFrom };
   if (typeof module !== "undefined" && module.exports) module.exports = EBTH;
   else root.EBTH = EBTH;
 })(typeof globalThis !== "undefined" ? globalThis : this);

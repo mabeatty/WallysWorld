@@ -143,3 +143,45 @@ test("sale payload carries no account or key material", { skip: skipSale }, () =
   const body = JSON.stringify(salePayload(saleDoc()));
   assert.ok(!body.includes("subscribeKey") && !body.includes("sub-c-") && !body.includes("pubnub"));
 });
+
+test("paging: if the plain request returns nothing new, another request style is tried and then kept", { skip: skipSale }, async () => {
+  const all = EBTH.cardItems(saleDoc());
+  const size = 48;
+  const f = pagedFetcher(all, size);
+  const empty = new JSDOM("<div id=items_grid></div>").window.document;
+  const styles = [];
+  const r = await EBTH.collectPages({
+    firstItems: all.slice(0, size), itemCount: 319, maxPages: 20, variants: [{}, { x: 1 }, { x: 2 }],
+    sleep: async () => {}, delayMs: () => 0,
+    fetchPage: async (n, v) => { styles.push([n, JSON.stringify(v)]); return v.x === 2 ? f.fetchPage(n) : { status: 200, doc: empty, info: "html 3kB items=0" }; }
+  });
+  assert.equal(r.items.length, 318);
+  assert.equal(r.variant, 2);
+  assert.deepEqual(styles.slice(0, 3), [[2, "{}"], [2, '{"x":1}'], [2, '{"x":2}']], "page 2 tried with each style in order");
+  assert.ok(styles.slice(3).every(([, v]) => v === '{"x":2}'), "later pages reuse the style that worked");
+  assert.match(r.diag, /v0:200 html 3kB items=0 new=0 \| v1:200/);
+});
+
+test("paging: when no request style returns lots, it stops after trying each once and says so", { skip: skipSale }, async () => {
+  const all = EBTH.cardItems(saleDoc());
+  const empty = new JSDOM("<div></div>").window.document;
+  const calls = [];
+  const r = await EBTH.collectPages({
+    firstItems: all.slice(0, 48), itemCount: 319, maxPages: 20, variants: [{}, { x: 1 }, { x: 2 }],
+    sleep: async () => {}, delayMs: () => 0, fetchPage: async (n, v) => { calls.push(n); return { status: 200, doc: empty, info: "x" }; }
+  });
+  assert.equal(r.items.length, 48);
+  assert.equal(calls.length, 3, "three attempts at page 2, nothing more");
+  assert.equal(r.pages, 4);
+  assert.ok(r.diag.includes("v2:"));
+});
+
+test("script or JSON responses that embed the card markup are unescaped", { skip: skipSale }, () => {
+  const cards = EBTH.cardItems(saleDoc()).slice(0, 2);
+  const html = cards.map((c) => `<a class="items-grid__item item" href="${c.url}"><h4 class="item__title" title="${c.name}">${c.name}</h4><span class="item__bid-amount">$${c.high_bid}</span></a>`).join("");
+  const asJs = "$(\"#items_grid\").append(" + JSON.stringify(html).replace(/</g, "\\u003c").replace(/>/g, "\\u003e") + ");";
+  const doc = new JSDOM(EBTH.htmlFromPossiblyEscaped(asJs)).window.document;
+  assert.deepEqual(EBTH.cardItems(doc).map((c) => c.item_id), cards.map((c) => c.item_id));
+  const plain = "<a class=\"items-grid__item item\" href=\"https://www.ebth.com/items/1-x\"></a>";
+  assert.equal(EBTH.htmlFromPossiblyEscaped(plain), plain, "normal HTML is left alone");
+});
