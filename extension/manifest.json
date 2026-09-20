@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "EBTH Watch",
+  "version": "0.1.0",
+  "description": "Sends auction data from ebth.com pages you can already see to your own dashboard.",
+  "permissions": ["alarms", "storage", "tabs"],
+  "host_permissions": ["https://www.ebth.com/*", "https://*.supabase.co/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.ebth.com/*"],
+      "js": ["lib/ebth.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "action": { "default_title": "EBTH Watch settings" }
+}

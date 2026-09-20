@@ -1,0 +1,7 @@
+{
+  "name": "ebth-watch-tests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" },
+  "devDependencies": { "@electric-sql/pglite": "^0.3.0", "jsdom": "^26.0.0" }
+}
