@@ -560,3 +560,23 @@ test("every column sorts both ways, and lots without an estimate stay at the bot
   assert.equal((await search({ status: "all", limit: 1, sort: "bid", dir: "sideways" })).dir, "desc", "a bad direction falls back to the default");
   assert.equal((await search({ status: "all", limit: 1, sort: "nonsense" })).rows.length, 1, "an unknown sort still returns lots");
 });
+
+test("a lot's address is always a real item address, whatever the collector sends", { skip }, async () => {
+  const t = await fresh();
+  const bad = "https://www.ebth.commailto:";
+  await t.ingest(payload(listDoc(), "/users/followed_items", { job: { kind: "list", url: "https://www.ebth.com/users/followed_items", item_id: null }, requiresLogin: true,
+    mutate: (p) => { p.items[0].url = bad; } }), at(T0, 1));
+  const first = (await t.one("select item_id, url from lots order by item_id limit 1")).url;
+  assert.match(first, /^https:\/\/www\.ebth\.com\/items\/\d+/, "a bad address on arrival becomes the plain item address");
+  assert.equal((await t.one("select count(*) n from lots where url !~ '^https://www\\.ebth\\.com/items/\\d+'")).n, 0);
+  // a good address already stored is not overwritten by a later bad one
+  await t.db.query("update lots set url = 'https://www.ebth.com/items/1-good-slug' where item_id = (select item_id from lots order by item_id limit 1)");
+  await t.ingest(payload(listDoc(), "/users/followed_items", { job: { kind: "list", url: "https://www.ebth.com/users/followed_items", item_id: null }, requiresLogin: true,
+    mutate: (p) => { p.items.forEach((i) => { i.url = bad; }); } }), at(T0, 2));
+  assert.equal((await t.one("select url from lots order by item_id limit 1")).url, "https://www.ebth.com/items/1-good-slug");
+  // and a closing-price job never gets handed a broken address
+  const jobs = [];
+  for (let i = 0; i < 6; i++) { const j = await t.next(at(T0, 10 + i * 5)); if (j && j.url) jobs.push(j.url); }
+  assert.ok(jobs.length > 0, "there are jobs to check");
+  assert.ok(jobs.every((u) => /^https:\/\/www\.ebth\.com\//.test(u) && !/mailto/.test(u)), jobs.join(" "));
+});

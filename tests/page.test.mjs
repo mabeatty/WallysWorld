@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EBTH, HAVE_FIXTURES, HAVE_SALE, LOT_FILE, LIST_FILE, LOT_ID, lotDoc, listDoc, saleDoc, salePayload, payload, sensitiveStrings, load } from "./helpers.mjs";
+import { domFrom, EBTH, HAVE_FIXTURES, HAVE_SALE, LOT_FILE, LIST_FILE, LOT_ID, lotDoc, listDoc, saleDoc, salePayload, payload, sensitiveStrings, load } from "./helpers.mjs";
 
 const skip = !HAVE_FIXTURES && "save a lot page (filename contains Rolex) and the Followed Items page into tests/fixtures";
 
@@ -114,4 +114,20 @@ test("card end times survive later pages of a sale, and exact times are never ov
   assert.equal(out[0].ends_at, "2026-09-21T00:03:20.000Z");
   assert.equal(out[0].ends_at_approx, false);
   assert.equal(out[1].ends_at, "2026-09-21T00:00:00.000Z");
+});
+
+test("a share-by-email link that contains a lot's address is not the lot's link", () => {
+  const share = "mailto:?subject=Look&body=https://www.ebth.com/items/111-a-lot";
+  const html = (links) => `<div data-react-props='{"item":{"id":111,"name":"A lot","aasmState":"for_sale","highBidAmount":5}}'>${links}</div>`;
+  // the email link comes first, as it did on the followed-items page
+  let [it] = EBTH.listItems(domFrom(html(`<a href="${share}">Email</a><a href="/items/111-a-lot?utm=x#top">A lot</a>`)));
+  assert.equal(it.url, "https://www.ebth.com/items/111-a-lot", "the real link, without the query or fragment");
+  // only an email link: no address at all, rather than a broken one
+  [it] = EBTH.listItems(domFrom(html(`<a href="${share}">Email</a>`)));
+  assert.equal(it.url, null);
+  // an absolute link to the site still works, and another site's link never does
+  [it] = EBTH.listItems(domFrom(html(`<a href="https://www.ebth.com/items/111-a-lot">A lot</a>`)));
+  assert.equal(it.url, "https://www.ebth.com/items/111-a-lot");
+  [it] = EBTH.listItems(domFrom(html(`<a href="https://example.com/items/111-a-lot">Elsewhere</a>`)));
+  assert.equal(it.url, null);
 });

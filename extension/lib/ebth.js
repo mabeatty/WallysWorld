@@ -21,10 +21,12 @@
     return m ? parseFloat(m[0].replace(/,/g, "")) : null;
   }
   function baseImg(u) { return (u || "").split("?")[0]; }
+  // Only the site's own links. A mailto: or share link that merely contains an item address in its text is not
+  // one; joining it onto the site address once produced "https://www.ebth.commailto:" and stopped the collector.
   function absUrl(href) {
     if (!href) return null;
-    var u = href.indexOf("http") === 0 ? href : "https://www.ebth.com" + href;
-    return u.split("?")[0].split("#")[0];
+    var u = href.indexOf("https://www.ebth.com/") === 0 ? href : href.charAt(0) === "/" ? "https://www.ebth.com" + href : null;
+    return u ? u.split("?")[0].split("#")[0] : null;
   }
 
   function itemStates(doc) {
@@ -58,7 +60,7 @@
   function listItems(doc) {
     var urls = {};
     doc.querySelectorAll('a[href*="/items/"]').forEach(function (a) {
-      var m = (a.getAttribute("href") || "").match(/\/items\/(\d+)-/);
+      var m = (a.getAttribute("href") || "").match(/^(?:https:\/\/www\.ebth\.com)?\/items\/(\d+)-/);
       if (m && !urls[m[1]]) urls[m[1]] = absUrl(a.getAttribute("href"));
     });
     var out = [];
