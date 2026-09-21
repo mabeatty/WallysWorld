@@ -112,3 +112,4 @@ th.group { text-align: center; color: var(--ink); border-bottom: 1px solid var(-
 th.grp, td.grp { border-left: 1px solid var(--rule); padding-left: 12px; }
 table.cases { max-width: 720px; }
 table.cases th, table.cases td { padding-right: 20px; }
+.loss { color: var(--warn); font-weight: 500; }

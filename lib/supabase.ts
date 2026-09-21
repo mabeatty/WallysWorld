@@ -43,6 +43,9 @@ export type Lot = {
   gap_worst?: number | null; gap_base?: number | null; gap_best?: number | null;
   max_worst?: number | null; max_base?: number | null; max_best?: number | null;
   room_worst?: number | null; room_base?: number | null; room_best?: number | null;
+  // profit and ROI if you won at the current bid: value less resale fee, less the bid plus buyer's premium
+  profit_worst?: number | null; profit_base?: number | null; profit_best?: number | null;
+  roi_worst?: number | null; roi_base?: number | null; roi_best?: number | null;
   est_low?: number | null; est_high?: number | null; max_bid?: number | null;
   confidence?: string | null; est_notes?: string | null; est_sources?: string | null; est_updated?: string | null; gap?: number | null;
 };
@@ -50,7 +53,7 @@ export type Lot = {
 export type Estimate = {
   est_low: number | null; est_high: number | null; max_bid: number | null;
   confidence: string | null; notes: string | null; sources: string | null; updated_at: string;
-  cases?: Partial<Record<"worst" | "base" | "best", { value: number; fee: number; max: number } | null>>;
+  cases?: Partial<Record<"worst" | "base" | "best", { value: number; fee: number; max: number; proceeds: number; profit: number; roi: number | null } | null>>;
 };
 
 export type Search = { total: number; limit: number; offset: number; rows: Lot[] };

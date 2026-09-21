@@ -671,6 +671,22 @@ test("three cases: worst, base and best each carry a value, headroom, max bid an
   assert.ok(n(by[w].room_worst) > 0, "Wiener is under in every case");
   assert.equal(by[LOT_ID].max_used, undefined, "the single max column is gone");
 
+  // profit and ROI at the current bid: cost is the bid plus the 25% premium, proceeds are the value less its resale fee
+  const fee = async (v) => n((await t.db.query("select resale_fee($1) f", [v])).rows[0].f);
+  for (const r of rows) {
+    const bid = n(r.high_bid ?? 0);
+    for (const c of ["worst", "base", "best"]) {
+      const v = n(r["v_" + c]);
+      const profit = v - (await fee(v)) - bid * 1.25;
+      assert.ok(Math.abs(n(r["profit_" + c]) - profit) < 0.01, c + " profit");
+      if (bid > 0) assert.ok(Math.abs(n(r["roi_" + c]) - profit / (bid * 1.25)) < 1e-9, c + " roi");
+      else assert.equal(r["roi_" + c], null, c + " roi is blank while the bid is $0");
+    }
+  }
+  const rolex = by[LOT_ID];
+  assert.ok(n(rolex.roi_worst) < 0 && n(rolex.roi_worst) < n(rolex.roi_base) && n(rolex.roi_base) < n(rolex.roi_best), "the Rolex loses money at the low value and improves with each case");
+  assert.ok(Math.abs(n(rolex.profit_base) - (3421.25 - 3300 * 1.25)) < 0.01, "base case: 3,421.25 net less 4,125 cost");
+
   const ids = async (o) => (await search({ status: "all", estimate: "with", limit: 10, ...o })).rows.map((r) => r.item_id);
   assert.deepEqual((await ids({ sort: "worst_room", dir: "desc" })).slice(0, 3), [third, w, LOT_ID], "most room first");
   assert.deepEqual((await ids({ sort: "worst_room", dir: "asc" })).slice(0, 3), [LOT_ID, w, third], "most over first");
@@ -683,6 +699,12 @@ test("three cases: worst, base and best each carry a value, headroom, max bid an
     assert.deepEqual(gaps, [...gaps].sort((a, b) => b - a), k + " headroom sorts");
     const rms = (await search({ status: "all", estimate: "with", limit: 10, sort: k + "_room", dir: "asc" })).rows.map((r) => n(r["room_" + k]));
     assert.deepEqual(rms, [...rms].sort((a, b) => a - b), k + " over/under sorts");
+    for (const dir of ["desc", "asc"]) {
+      const rr = (await search({ status: "all", estimate: "with", limit: 10, sort: k + "_roi", dir })).rows.map((r) => r["roi_" + k]);
+      const have = rr.filter((x) => x != null).map(n);
+      assert.deepEqual(have, [...have].sort((a, b) => (dir === "desc" ? b - a : a - b)), k + " ROI sorts " + dir);
+      assert.equal(rr.slice(have.length).every((x) => x == null), true, "a blank ROI sorts after the numbers");
+    }
   }
   assert.deepEqual((await ids({ sort: "source", dir: "desc" })).slice(0, 3), [third, LOT_ID, w], "newest valuation first");
   const all = await search({ status: "all", limit: 200, sort: "worst_room" });
@@ -706,6 +728,9 @@ test("three cases: worst, base and best each carry a value, headroom, max bid an
   assert.deepEqual([n(c.worst.value), n(c.base.value), n(c.best.value)], [3000, 3750, 4500]);
   assert.deepEqual([n(c.worst.max), n(c.base.max), n(c.best.max)], [1849, 2326, 2803]);
   assert.equal(n(c.base.fee), 328.75, "the resale fee on the $3,750 base case");
+  assert.ok(Math.abs(n(c.base.profit) - (n(c.base.proceeds) - n(lot.lot.high_bid) * 1.25)) < 0.01, "the lot's base-case profit");
+  assert.ok(Math.abs(n(c.base.roi) - n(c.base.profit) / (n(lot.lot.high_bid) * 1.25)) < 1e-9, "and its ROI");
+  assert.equal(n(c.base.proceeds), 3421.25);
   assert.equal(Number(lot.bid_math.premium), 0.25);
 });
 

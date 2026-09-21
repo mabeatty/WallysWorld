@@ -1,7 +1,7 @@
 // Column sorting for lot tables: which column, which direction, and what a click on a heading does.
 export const SORT_KEYS = [
   "ends", "bid", "bids", "bidders", "source", "name", "category",
-  "worst", "worst_gap", "worst_room", "base", "base_gap", "base_room", "best", "best_gap", "best_room",
+  "worst", "worst_gap", "worst_room", "worst_roi", "base", "base_gap", "base_room", "base_roi", "best", "best_gap", "best_room", "best_roi",
 ];
 
 // Addresses saved before the three cases existed: the low estimate is now the worst case.

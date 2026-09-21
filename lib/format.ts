@@ -55,6 +55,20 @@ export function overUnder(l: { room?: number | null; max_used?: number | null; e
     : { label: `Over by ${money(-r)}`, tone: "over" as const, room: r };
 }
 
+// Return on cost as a signed percent: "+118%" or "-34%". Null when there is no bid to measure against.
+export function roiText(r: number | null | undefined) {
+  if (r == null || !Number.isFinite(Number(r))) return null;
+  const pct = Math.round(Number(r) * 100);
+  return { text: `${pct >= 0 ? "+" : "-"}${Math.abs(pct).toLocaleString("en-US")}%`, positive: Number(r) >= 0 };
+}
+
+// "+$8,045" or "-$1,405".
+export function signedMoney(n: number | null | undefined) {
+  if (n == null) return "-";
+  const v = Math.round(Number(n));
+  return `${v >= 0 ? "+" : "-"}$${Math.abs(v).toLocaleString("en-US")}`;
+}
+
 // "Sep 20": the day something was recorded.
 export function dateOnly(ts: string | null | undefined) {
   if (!ts) return "-";

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { rpc, type Estimate, type Lot, type RefreshStatus } from "@/lib/supabase";
-import { dateOnly, headroom, money, overUnder, when } from "@/lib/format";
+import { dateOnly, headroom, money, overUnder, roiText, signedMoney, when } from "@/lib/format";
 import { clearEstimate, saveEstimate } from "../../actions";
 import { RefreshButton, RefreshNote } from "../../RefreshControls";
 
@@ -70,13 +70,14 @@ export default async function LotPage({ params, searchParams }: { params: Promis
             Valued {dateOnly(est.updated_at)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Worst case is your low estimate, best case your high, and base case the midpoint.
           </p>
           <table className="cases">
-            <thead><tr><th>Case</th><th className="num">Value</th><th>Headroom</th><th className="num">Max bid</th><th>Over / under</th></tr></thead>
+            <thead><tr><th>Case</th><th className="num">Value</th><th>Headroom</th><th className="num">Max bid</th><th>Over / under</th><th className="num">Profit</th><th>ROI</th></tr></thead>
             <tbody>
               {(["worst", "base", "best"] as const).map((k) => {
                 const c = est.cases?.[k];
                 if (!c) return null;
                 const h = headroom(c.value, l.high_bid);
                 const ou = overUnder({ room: Number(c.max) - next, max_used: c.max, ends_at: l.ends_at });
+                const roi = roiText(c.roi);
                 return (
                   <tr key={k}>
                     <td>{k === "worst" ? "Worst" : k === "base" ? "Base" : "Best"}</td>
@@ -84,6 +85,8 @@ export default async function LotPage({ params, searchParams }: { params: Promis
                     <td>{h ? <span className={h.positive ? "pos" : "neg"}>{h.text}</span> : "-"}</td>
                     <td className="num">{money(c.max)}</td>
                     <td>{ou ? <span className={`chip ${ou.tone}`}>{ou.label}</span> : <span className="neg">-</span>}</td>
+                    <td className="num">{roi ? signedMoney(c.profit) : "-"}</td>
+                    <td>{roi ? <span className={roi.positive ? "pos" : "loss"}>{roi.text}</span> : <span className="neg">-</span>}</td>
                   </tr>
                 );
               })}
@@ -96,7 +99,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
           ) : null}
           {r.bid_math ? (
             <p className="note" style={{ marginTop: 8 }}>
-              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium. Change the premium and margin on the Setup page.
+              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium. Profit and ROI are what you would make if you won at the current bid: the case value less its resale fee, less the bid plus the buyer&apos;s premium, and ROI is that profit as a percent of what you pay. Change the premium and margin on the Setup page.
             </p>
           ) : null}
         </>

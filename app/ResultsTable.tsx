@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Lot } from "@/lib/supabase";
-import { headroom, money, overUnder, timeLeft, when } from "@/lib/format";
+import { headroom, money, overUnder, roiText, signedMoney, timeLeft, when } from "@/lib/format";
 import ValuationCell from "./ValuationCell";
 
 type Case = "worst" | "base" | "best";
@@ -15,13 +15,14 @@ const NUM: ColKey[] = ["bid", "bids", "bidders"];
 const isCase = (k: ColKey): k is Case => k === "worst" || k === "base" || k === "best";
 
 const FIELDS = {
-  worst: { v: "v_worst", gap: "gap_worst", max: "max_worst", room: "room_worst" },
-  base: { v: "v_base", gap: "gap_base", max: "max_base", room: "room_base" },
-  best: { v: "v_best", gap: "gap_best", max: "max_best", room: "room_best" },
+  worst: { v: "v_worst", gap: "gap_worst", max: "max_worst", room: "room_worst", roi: "roi_worst", profit: "profit_worst" },
+  base: { v: "v_base", gap: "gap_base", max: "max_base", room: "room_base", roi: "roi_base", profit: "profit_base" },
+  best: { v: "v_best", gap: "gap_best", max: "max_best", room: "room_best", roi: "roi_best", profit: "profit_best" },
 } as const;
 
 // One lot table for the whole dashboard. Every column heading sorts; clicking the active one flips the direction.
-// Each case is a cluster of three numbers: its value, the headroom over the current bid, and over or under its max bid.
+// Each case is a cluster of four numbers: its value, the headroom over the current bid, over or under its max bid,
+// and the ROI you would make at the current bid.
 export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, endsStyle = "text" }: {
   rows: Lot[]; cols: ColKey[]; sort: string; dir: string; sortHref: (key: string) => string; now: number; endsStyle?: "text" | "bar";
 }) {
@@ -40,7 +41,7 @@ export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, end
           <tr>
             {cols.map((key) =>
               isCase(key) ? (
-                <th key={key} colSpan={3} className="group">{CASE_LABEL[key]}</th>
+                <th key={key} colSpan={4} className="group">{CASE_LABEL[key]}</th>
               ) : (
                 <th
                   key={key} rowSpan={cases.length ? 2 : 1}
@@ -58,6 +59,7 @@ export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, end
                 <th key={c + "v"} className={"grp" + (sort === c ? " active" : "")} aria-sort={aria(c)}>{sortLink(c, "Value")}</th>,
                 <th key={c + "g"} className={sort === c + "_gap" ? "active" : ""} aria-sort={aria(c + "_gap")}>{sortLink(c + "_gap", "Headroom")}</th>,
                 <th key={c + "r"} className={sort === c + "_room" ? "active" : ""} aria-sort={aria(c + "_room")}>{sortLink(c + "_room", "Over / under")}</th>,
+                <th key={c + "i"} className={sort === c + "_roi" ? "active" : ""} aria-sort={aria(c + "_roi")}>{sortLink(c + "_roi", "ROI")}</th>,
               ])}
             </tr>
           )}
@@ -78,11 +80,12 @@ function CaseCells({ c, l, now }: { c: Case; l: Lot; now: number }) {
   const f = FIELDS[c];
   const value = l[f.v];
   if (value == null) {
-    return <><td className="grp"><span className="neg">-</span></td><td><span className="neg">-</span></td><td><span className="neg">-</span></td></>;
+    return <><td className="grp"><span className="neg">-</span></td><td><span className="neg">-</span></td><td><span className="neg">-</span></td><td><span className="neg">-</span></td></>;
   }
   const h = headroom(value, l.high_bid);
   const max = l[f.max];
   const ou = overUnder({ room: l[f.room], max_used: max, ends_at: l.ends_at }, now);
+  const roi = roiText(l[f.roi]);
   return (
     <>
       <td className="grp">{money(value)}{c === "base" && l.confidence ? <span className="sub">{l.confidence} confidence</span> : null}</td>
@@ -90,6 +93,9 @@ function CaseCells({ c, l, now }: { c: Case; l: Lot; now: number }) {
       <td>
         {ou ? <span className={`chip ${ou.tone}`}>{ou.label}</span> : <span className="neg">-</span>}
         {max != null && ou ? <span className="sub">max {money(max)}</span> : null}
+      </td>
+      <td>
+        {roi ? <><span className={roi.positive ? "pos" : "loss"}>{roi.text}</span><span className="sub">{signedMoney(l[f.profit])}</span></> : <span className="neg">-</span>}
       </td>
     </>
   );

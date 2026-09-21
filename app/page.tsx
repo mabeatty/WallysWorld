@@ -82,7 +82,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
 
       <h2 id="estimates">Your estimates</h2>
-      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}Worst case is your low estimate, best case your high, base case the midpoint. Click any heading to sort, for example an Over / under column to see which lots are still under their max bid.</p>
+      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}Worst case is your low estimate, best case your high, base case the midpoint. ROI is the profit you would make at the current bid, after the resale fee and the buyer&apos;s premium, as a percent of what you pay. Click any heading to sort.</p>
       {ests.rows.length === 0 ? (
         <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
       ) : (
