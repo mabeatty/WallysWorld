@@ -29,7 +29,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
     <>
       <header className="top">
         <h1>Setup</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/lots">Find lots</Link></nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/coins">Coins &amp; Stamps</Link><Link href="/lots">Find lots</Link></nav>
       </header>
 
       <h2 id="bidmath">Bid math</h2>

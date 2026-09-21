@@ -851,3 +851,24 @@ test("dealer bid: on every lot with an estimate, sortable, and on the lot page",
   assert.equal(n(lot.bid_math.dealer), 0.15);
   assert.equal(n(lot.estimate.cases.worst.value), 3000, "the other cases are unchanged");
 });
+
+test("dash_search: p.categories matches any of several categories, alongside the single p.category", { skip: skipSale }, async () => {
+  const { t, dash, search } = await loaded();
+  const cats = (await t.db.query("select dash_categories($1) c", [dash])).rows[0].c;
+  assert.ok(Array.isArray(cats) && cats.length >= 2, "the fixture sale should span more than one category");
+  const [a, b] = cats.map((c) => c.category);
+
+  const onlyA = await search({ status: "all", category: a, limit: 200 });
+  const onlyB = await search({ status: "all", category: b, limit: 200 });
+  const both = await search({ status: "all", categories: [a, b], limit: 200 });
+
+  assert.equal(both.total, onlyA.total + onlyB.total, "categories: [a, b] is the union of the two single-category searches");
+  assert.ok(both.rows.every((r) => r.category === a || r.category === b));
+  assert.ok(onlyA.rows.every((r) => r.category === a), "the existing single p.category filter is unchanged");
+
+  const neither = await search({ status: "all", categories: ["Nonexistent Category"], limit: 200 });
+  assert.equal(neither.total, 0, "a categories array that matches nothing returns nothing");
+
+  const ignored = await search({ status: "all", category: a, categories: [b], limit: 200 });
+  assert.equal(ignored.total, 0, "category and categories both apply (anded together), not either/or");
+});

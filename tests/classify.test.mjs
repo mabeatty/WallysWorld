@@ -4,7 +4,7 @@ import { PGlite } from "@electric-sql/pglite";
 import fs from "node:fs";
 import { GOLDEN } from "./classify.golden.mjs";
 
-const SQL = fs.readFileSync(new URL("../supabase/migrations/0014_watch_fobs.sql", import.meta.url), "utf8");
+const SQL = fs.readFileSync(new URL("../supabase/migrations/0016_coins_and_stamps.sql", import.meta.url), "utf8");
 const fn = SQL.slice(SQL.indexOf("create or replace function classify_lot"), SQL.indexOf("end $$;", SQL.indexOf("create or replace function classify_lot")) + 7);
 
 test("every known title lands in its category", async () => {

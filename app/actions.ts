@@ -95,6 +95,7 @@ export async function refreshBids(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/lots");
   revalidatePath("/watches");
+  revalidatePath("/coins");
   redirect(u.pathname + u.search + (anchor ? "#" + anchor : ""));
 }
 
