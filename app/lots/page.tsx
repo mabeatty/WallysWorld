@@ -17,7 +17,12 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
   };
   const q = get("q").trim();
   const status = ["open", "closed", "all"].includes(get("status")) ? get("status") : "open";
-  const sort = ["ends", "bid_desc", "bid_asc", "gap", "seen", "name"].includes(get("sort")) ? get("sort") : "ends";
+  const rawSort = get("sort");
+  const sort = rawSort === "bid_asc" || rawSort === "bid_desc" ? "bid"
+    : ["ends", "bid", "estimate", "gap", "seen", "name"].includes(rawSort) ? rawSort : "ends";
+  const defaultDir = (k: string) => (k === "ends" || k === "name" ? "asc" : "desc");
+  const dir = get("dir") === "asc" || get("dir") === "desc" ? get("dir")
+    : rawSort === "bid_asc" ? "asc" : defaultDir(sort);
   const estimate = ["any", "with", "without"].includes(get("estimate")) ? get("estimate") : "any";
   const within = digits(get("within"));
   const minBid = digits(get("min_bid"));
@@ -27,7 +32,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
 
   const r = await rpc<Search>("dash_search", {
     p: {
-      q, status, sort, estimate,
+      q, status, sort, dir, estimate,
       min_bid: minBid, max_bid: maxBid, within_hours: within,
       tracked: tracked ? true : undefined,
       limit: PER_PAGE, offset: (page - 1) * PER_PAGE,
@@ -38,7 +43,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
   const link = (p: number) => {
     const u = new URLSearchParams();
     if (q) u.set("q", q);
-    u.set("status", status); u.set("sort", sort); u.set("estimate", estimate);
+    u.set("status", status); u.set("sort", sort); u.set("dir", dir); u.set("estimate", estimate);
     if (within) u.set("within", within);
     if (minBid) u.set("min_bid", minBid);
     if (maxBid) u.set("max_bid", maxBid);
@@ -46,6 +51,26 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
     u.set("page", String(p));
     return `/lots?${u.toString()}`;
   };
+  // Clicking the active column flips its direction; clicking another column starts in that column's natural direction.
+  const sortLink = (key: string) => {
+    const u = new URLSearchParams();
+    if (q) u.set("q", q);
+    u.set("status", status); u.set("estimate", estimate);
+    if (within) u.set("within", within);
+    if (minBid) u.set("min_bid", minBid);
+    if (maxBid) u.set("max_bid", maxBid);
+    if (tracked) u.set("tracked", "on");
+    u.set("sort", key);
+    u.set("dir", key === sort ? (dir === "asc" ? "desc" : "asc") : defaultDir(key));
+    return `/lots?${u.toString()}`;
+  };
+  const head = (key: string, label: string, cls = "") => (
+    <th className={`${cls} ${key === sort ? "active" : ""}`.trim()} aria-sort={key === sort ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+      <Link href={sortLink(key)} className="sortlink">
+        {label}<span className="sortmark" aria-hidden="true">{key === sort ? (dir === "asc" ? "\u25B2" : "\u25BC") : ""}</span>
+      </Link>
+    </th>
+  );
   const from = r.total === 0 ? 0 : r.offset + 1;
   const to = Math.min(r.offset + r.rows.length, r.total);
 
@@ -85,31 +110,26 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
             <option value="any">Any</option><option value="with">Has an estimate</option><option value="without">No estimate yet</option>
           </select>
         </label>
-        <label>Sort by
-          <select name="sort" defaultValue={sort}>
-            <option value="ends">Closing soonest</option><option value="gap">Most headroom over the bid</option>
-            <option value="bid_desc">Highest bid</option><option value="bid_asc">Lowest bid</option>
-            <option value="seen">Recently updated</option><option value="name">Name</option>
-          </select>
-        </label>
+        <input type="hidden" name="sort" value={sort} />
+        <input type="hidden" name="dir" value={dir} />
         <label className="check"><input type="checkbox" name="tracked" defaultChecked={tracked} /> Followed lots only</label>
         <div><button type="submit">Apply filters</button></div>
       </form>
 
       <p className="note" style={{ marginTop: 18 }}>
         {r.total === 0 ? "No lots match." : `Showing ${from}-${to} of ${r.total.toLocaleString("en-US")} lots.`}
-        {r.total === 0 && (q || status !== "open") ? " Try fewer words, or show all lots." : ""}
+        {r.total === 0 && (q || status !== "open") ? " Try fewer words, or show all lots." : " Click a column heading to sort. Estimates sort by the low value, and lots without one stay at the bottom."}
       </p>
 
       {r.rows.length > 0 && (
         <table>
           <thead>
             <tr>
-              <th>Lot</th>
-              <th className="num">Bid</th>
-              <th className="hide-sm">Your estimate</th>
-              <th className="hide-sm">Headroom</th>
-              <th>Closes</th>
+              {head("name", "Lot")}
+              {head("bid", "Bid", "num")}
+              {head("estimate", "Your estimate")}
+              {head("gap", "Headroom", "hide-sm")}
+              {head("ends", "Closes")}
             </tr>
           </thead>
           <tbody>
@@ -121,7 +141,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
                 <tr key={l.item_id}>
                   <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>
                   <td className="num">{money(l.high_bid)}</td>
-                  <td className="hide-sm">
+                  <td>
                     {l.est_low != null || l.est_high != null ? (
                       <>{range(l.est_low, l.est_high)}{l.confidence ? <span className="sub">{l.confidence} confidence</span> : null}</>
                     ) : <span className="neg">none</span>}

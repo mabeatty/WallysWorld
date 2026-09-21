@@ -525,3 +525,38 @@ test("search and estimates are dashboard-only", { skip: skipSale }, async () => 
   assert.ok((await t.db.query("select dash_search($1) r", [dash])).rows[0].r.total > 0);
   await t.db.exec("reset role");
 });
+
+test("every column sorts both ways, and lots without an estimate stay at the bottom", { skip: skipSale }, async () => {
+  const { lots, search, setEst } = await loaded();
+  const w = WIENER();
+  await setEst(w, 800, 1500, 400, "medium", "n", null);
+  await setEst(LOT_ID, 3000, 4500, 3000, "low", "n", null);
+  const third = [...lots.keys()].find((id) => id !== w && id !== LOT_ID);
+  await setEst(third, 50, null, null, null, "low only", null);                       // a low estimate with no high
+  const ids = async (o) => (await search({ status: "all", limit: 200, ...o })).rows.map((r) => r.item_id);
+
+  const estDesc = await ids({ sort: "estimate", dir: "desc" });
+  assert.deepEqual(estDesc.slice(0, 3), [LOT_ID, w, third], "highest low-estimate first");
+  const estAsc = await ids({ sort: "estimate", dir: "asc" });
+  assert.deepEqual(estAsc.slice(0, 3), [third, w, LOT_ID], "lowest first");
+  assert.equal(estAsc.length, 200, "a full page comes back after the estimated lots");
+
+  const gapAsc = (await search({ status: "all", estimate: "with", sort: "gap", dir: "asc" })).rows.map((r) => Number(r.gap));
+  assert.deepEqual(gapAsc, [...gapAsc].sort((a, b) => a - b));
+  const gapDesc = (await search({ status: "all", estimate: "with", sort: "gap", dir: "desc" })).rows.map((r) => Number(r.gap));
+  assert.deepEqual(gapDesc, [...gapDesc].sort((a, b) => b - a));
+
+  const ends = (await search({ status: "all", limit: 200, sort: "ends", dir: "desc" })).rows.map((r) => new Date(r.ends_at).getTime());
+  assert.deepEqual(ends, [...ends].sort((a, b) => b - a), "latest closing first when descending");
+  const names = (await search({ status: "all", limit: 200, sort: "name", dir: "desc" })).rows.map((r) => r.name.toLowerCase());
+  assert.deepEqual(names, [...names].sort().reverse());
+  const bidAsc = (await search({ status: "all", limit: 200, sort: "bid", dir: "asc" })).rows.map((r) => Number(r.high_bid));
+  assert.deepEqual(bidAsc, [...bidAsc].sort((a, b) => a - b));
+
+  const defaults = await search({ status: "all", limit: 1, sort: "estimate" });
+  assert.deepEqual([defaults.sort, defaults.dir], ["estimate", "desc"], "estimate defaults to highest first");
+  assert.equal((await search({ status: "all", limit: 1, sort: "ends" })).dir, "asc");
+  assert.equal((await search({ status: "all", limit: 1, sort: "bid_asc" })).dir, "asc", "the older names still work");
+  assert.equal((await search({ status: "all", limit: 1, sort: "bid", dir: "sideways" })).dir, "desc", "a bad direction falls back to the default");
+  assert.equal((await search({ status: "all", limit: 1, sort: "nonsense" })).rows.length, 1, "an unknown sort still returns lots");
+});
