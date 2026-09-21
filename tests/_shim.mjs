@@ -19,6 +19,9 @@ const wiener = EBTH.cardItems(saleDoc()).find((c) => /Ed Wiener/.test(c.name)).i
 const est = (id, ...a) => db.query("select dash_set_estimate($1,$2,$3,$4,$5,$6,$7,$8)", [dashTok, id, ...a]);
 await est(wiener, 800, 1500, 400, "medium", "Rago $4,063 (2021), Wright $3,024. Verify the signature.", "https://www.ragoarts.com/auctions/2021/05/jewels-watches/153");
 await est("14568274", 3000, 4500, 3000, "low", "watch comps", null);
+const still = (await db.query("select item_id from lot_latest where ends_at > now() order by ends_at desc limit 2")).rows;
+if (still[0]) await est(still[0].item_id, 900, 1400, 700, "medium", "an open lot", null);
+if (still[1]) await est(still[1].item_id, 100, 150, 120, "low", "another open lot", null);
 console.log(JSON.stringify({ dashTok, wiener }));
 
 const meta = async (fn) => (await db.query(
