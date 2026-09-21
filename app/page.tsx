@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { rpc, type Lot, type RefreshStatus, type Search } from "@/lib/supabase";
+import { rpc, type CategoryCount, type Lot, type RefreshStatus, type Search } from "@/lib/supabase";
 import { ago, money, when } from "@/lib/format";
 import { readSort, nextDir } from "@/lib/sort";
 import { resume, setPaused } from "./actions";
@@ -21,12 +21,15 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   const one = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
   const cs = readSort(one("sort"), one("dir"));          // Closing soon
   const es = readSort(one("esort"), one("edir"));        // Your estimates
-  const [d, ests, closing, status] = await Promise.all([
+  const [d, ests, closing, status, cats] = await Promise.all([
     rpc<Home>("dash_home"),
     rpc<Search>("dash_search", { p: { status: "open", estimate: "with", sort: es.sort, dir: es.dir, limit: 30 } }),
     rpc<Search>("dash_search", { p: { status: "open", sort: cs.sort, dir: cs.dir, limit: 40 } }),
     rpc<RefreshStatus>("dash_refresh_status"),
+    rpc<CategoryCount[]>("dash_categories"),
   ]);
+  const watches = cats.find((c) => c.category === "Watches");
+  const watchesHref = "/lots?category=Watches&sort=bid&dir=desc";
   const now = new Date();
   const halt = d.halt;
   const paused = d.paused === true;
@@ -45,7 +48,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <meta httpEquiv="refresh" content="60" />
       <header className="top">
         <h1>EBTH Watch</h1>
-        <nav className="links"><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href={watchesHref}>Watches</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <form method="get" action="/lots" className="search">
@@ -79,7 +82,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
 
       <h2 id="estimates">Your estimates</h2>
-      <p className="note">Open lots you have valued. Click a heading to sort, for example Over / under to see which are still under your max. <Link href="/lots?estimate=with&sort=room">See all of them</Link></p>
+      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}Click a heading to sort, for example Over / under to see which are still under your max.</p>
       {ests.rows.length === 0 ? (
         <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
       ) : (
