@@ -779,3 +779,75 @@ test("refresh: chosen lots are reloaded first, once each, and closing prices fol
   await assert.rejects(() => t.db.query("select * from refresh_requests"), /permission denied/);
   await t.db.exec("reset role");
 });
+
+test("dealer bid: the worst case less the dealer discount, taken as net cash", async () => {
+  const t = await fresh();
+  const dash = (await t.one("select value #>> '{}' v from settings where key='dashboard_token'")).v;
+  const dc = async (w, bid) => (await t.db.query("select dealer_case_json($1, $2) c", [w, bid])).rows[0].c;
+  const n = (x) => Number(x);
+  // defaults: 15% dealer discount, 15% margin, 25% premium
+  let c = await dc(10000, 4000);
+  assert.deepEqual([c.value, c.fee, c.proceeds].map(n), [8500, 0, 8500], "no resale fee comes off a dealer bid");
+  assert.equal(n(c.max), 5780, "8,500 x 85% / 1.25");
+  assert.equal(n(c.profit), 3500, "8,500 less 4,000 x 1.25");
+  assert.equal(n(c.roi), 0.7);
+  assert.equal((await dc(10000, 0)).roi, null, "no ROI while the bid is $0");
+  assert.equal(await dc(null, 100), null, "no worst case, no dealer bid");
+  const m0 = (await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r;
+  assert.equal(n(m0.dealer), 0.15, "the discount is part of the bid math");
+
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.20)", [dash]);
+  c = await dc(10000, 4000);
+  assert.equal(n(c.value), 8000, "a bigger discount lowers the dealer bid");
+  assert.equal(n(c.max), 5440);
+  assert.equal(n(c.roi), 0.6);
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15)", [dash]);
+  assert.equal(n((await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r.dealer), 0.2, "leaving the discount out keeps it");
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.95)", [dash]), /dealer discount must be between/);
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.1)", [t.token]), /invalid token/);
+});
+
+test("dealer bid: on every lot with an estimate, sortable, and on the lot page", { skip: skipSale }, async () => {
+  const { t, dash, lots, search, setEst } = await loaded();
+  const w = WIENER();
+  const third = [...lots.keys()].find((id) => id !== w && id !== LOT_ID);
+  await setEst(w, 800, 1500, null, null, "n", null);
+  await setEst(LOT_ID, 3000, 4500, null, null, "n", null);
+  await setEst(third, 50000, 90000, null, null, "n", null);
+  const n = (x) => Number(x);
+  const rows = (await search({ status: "all", estimate: "with", limit: 10 })).rows;
+  const by = Object.fromEntries(rows.map((r) => [r.item_id, r]));
+
+  assert.deepEqual([w, LOT_ID, third].map((id) => n(by[id].v_dealer)), [680, 2550, 42500], "85% of each worst case");
+  for (const id of [w, LOT_ID, third]) {
+    const r = by[id];
+    const bid = n(r.high_bid ?? 0), next = r.min_next_bid != null ? n(r.min_next_bid) : bid + 1;
+    assert.equal(n(r.gap_dealer), n(r.v_dealer) - bid, "headroom over the current bid");
+    assert.equal(n(r.max_dealer), Math.floor((n(r.v_dealer) * 0.85) / 1.25), "no resale fee in the dealer max bid");
+    assert.equal(n(r.room_dealer), n(r.max_dealer) - next);
+    assert.equal(n(r.profit_dealer), n(r.v_dealer) - bid * 1.25);
+    if (bid > 0) assert.ok(Math.abs(n(r.roi_dealer) - n(r.profit_dealer) / (bid * 1.25)) < 1e-9);
+    else assert.equal(r.roi_dealer, null);
+  }
+
+  const all = async (o) => (await search({ status: "all", limit: 200, ...o })).rows;
+  const vals = (rs, k) => rs.map((r) => r[k]).filter((v) => v != null).map(n);
+  const dDesc = await all({ sort: "dealer", dir: "desc" });
+  assert.deepEqual(vals(dDesc, "v_dealer"), [...vals(dDesc, "v_dealer")].sort((a, b) => b - a));
+  assert.deepEqual(dDesc.slice(0, 3).map((r) => r.item_id), [third, LOT_ID, w]);
+  assert.ok(dDesc.slice(3, 20).every((r) => r.v_dealer == null), "lots without an estimate stay at the bottom");
+  const dAsc = await all({ sort: "dealer", dir: "asc" });
+  assert.deepEqual(dAsc.slice(0, 3).map((r) => r.item_id), [w, LOT_ID, third]);
+  for (const key of ["dealer_gap", "dealer_room", "dealer_roi"]) {
+    const field = key === "dealer_gap" ? "gap_dealer" : key === "dealer_room" ? "room_dealer" : "roi_dealer";
+    const asc = vals(await all({ sort: key, dir: "asc" }), field), desc = vals(await all({ sort: key, dir: "desc" }), field);
+    assert.deepEqual(asc, [...asc].sort((a, b) => a - b), `${key} ascending`);
+    assert.deepEqual(desc, [...desc].sort((a, b) => b - a), `${key} descending`);
+  }
+
+  const lot = (await t.db.query("select dash_lot($1, $2) r", [dash, LOT_ID])).rows[0].r;
+  const d = lot.estimate.cases.dealer;
+  assert.deepEqual([n(d.value), n(d.fee), n(d.proceeds), n(d.max)], [2550, 0, 2550, 1734], "the lot page carries a dealer case");
+  assert.equal(n(lot.bid_math.dealer), 0.15);
+  assert.equal(n(lot.estimate.cases.worst.value), 3000, "the other cases are unchanged");
+});

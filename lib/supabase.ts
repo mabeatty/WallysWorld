@@ -46,6 +46,9 @@ export type Lot = {
   // profit and ROI if you won at the current bid: value less resale fee, less the bid plus buyer's premium
   profit_worst?: number | null; profit_base?: number | null; profit_best?: number | null;
   roi_worst?: number | null; roi_base?: number | null; roi_best?: number | null;
+  // what a dealer might pay outright: the worst case less the dealer discount, net cash (no resale fee)
+  v_dealer?: number | null; gap_dealer?: number | null; max_dealer?: number | null; room_dealer?: number | null;
+  profit_dealer?: number | null; roi_dealer?: number | null;
   est_low?: number | null; est_high?: number | null; max_bid?: number | null;
   confidence?: string | null; est_notes?: string | null; est_sources?: string | null; est_updated?: string | null; gap?: number | null;
 };
@@ -53,13 +56,13 @@ export type Lot = {
 export type Estimate = {
   est_low: number | null; est_high: number | null; max_bid: number | null;
   confidence: string | null; notes: string | null; sources: string | null; updated_at: string;
-  cases?: Partial<Record<"worst" | "base" | "best", { value: number; fee: number; max: number; proceeds: number; profit: number; roi: number | null } | null>>;
+  cases?: Partial<Record<"worst" | "base" | "best" | "dealer", { value: number; fee: number; max: number; proceeds: number; profit: number; roi: number | null } | null>>;
 };
 
 export type Search = { total: number; limit: number; offset: number; rows: Lot[] };
 
 export type CategoryCount = { category: string; open: number; total: number };
 
-export type BidMath = { premium: number; margin: number; tiers: { up_to: number | null; rate: number }[] };
+export type BidMath = { premium: number; margin: number; dealer: number; tiers: { up_to: number | null; rate: number }[] };
 
 export type RefreshStatus = { waiting: number; halted: boolean; paused: boolean; gap_seconds: number };

@@ -39,9 +39,11 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       <form action={saveBidMath} className="bidmath">
         <label>Buyer&apos;s premium, %<input type="text" inputMode="decimal" name="premium" defaultValue={pct(math.premium)} /></label>
         <label>Margin to keep, %<input type="text" inputMode="decimal" name="margin" defaultValue={pct(math.margin)} /></label>
+        <label>Dealer discount, %<input type="text" inputMode="decimal" name="dealer" defaultValue={pct(math.dealer)} /></label>
         <button type="submit">Save</button>
       </form>
       <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, shipping, and sales tax.</p>
+      <p className="note">Dealer bid is the worst case less the dealer discount, with no resale fee, since a dealer pays outright. The 15% is a rule of thumb for liquid, mainstream watches; thinner or cheaper pieces run wider. A firm quote from a dealer replaces it.</p>
 
       <h2>Connect the Chrome extension</h2>
       <ol className="steps">
