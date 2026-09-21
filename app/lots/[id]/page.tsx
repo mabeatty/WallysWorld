@@ -16,7 +16,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
   const { id } = await params;
   const sp = await searchParams;
   const flag = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
-  const r = await rpc<{ lot: Lot | null; details: Detail | null; estimate: Estimate | null; snapshots: Snap[] }>("dash_lot", { p_id: id });
+  const r = await rpc<{ lot: Lot | null; category: string | null; details: Detail | null; estimate: Estimate | null; snapshots: Snap[] }>("dash_lot", { p_id: id });
   if (!r.lot) notFound();
   const l = r.lot;
   const d = r.details ?? {};
@@ -32,7 +32,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
         <nav className="links"><Link href="/">Dashboard</Link><Link href="/lots">Find lots</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
       </header>
       <p className="note">
-        {[d.sale_name ?? l.sale_name, d.categories?.[0], d.catalog_number].filter(Boolean).join(", ")}
+        {[r.category, d.sale_name ?? l.sale_name, d.catalog_number].filter(Boolean).join(", ")}
       </p>
 
       <div className="facts">

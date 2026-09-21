@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 export const EBTH = require("../extension/lib/ebth.js");
 const mig = (f) => fs.readFileSync(path.join(here, "../supabase/migrations", f), "utf8");
 export const MIGRATION_0001 = mig("0001_init.sql");
-export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql"), mig("0004_diagnostics_and_hint.sql"), mig("0005_paged_sales.sql"), mig("0006_estimates_and_search.sql"), mig("0007_sortable_columns.sql"), mig("0008_repair_lot_urls.sql"), mig("0009_estimate_source_in_search.sql")].join("\n");
+export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql"), mig("0004_diagnostics_and_hint.sql"), mig("0005_paged_sales.sql"), mig("0006_estimates_and_search.sql"), mig("0007_sortable_columns.sql"), mig("0008_repair_lot_urls.sql"), mig("0009_estimate_source_in_search.sql"), mig("0010_categories.sql")].join("\n");
 
 const fx = path.join(here, "fixtures");
 const find = (re) => fs.readdirSync(fx).filter((f) => re.test(f)).map((f) => path.join(fx, f))[0];

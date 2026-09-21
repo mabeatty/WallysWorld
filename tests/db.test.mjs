@@ -582,3 +582,34 @@ test("a lot's address is always a real item address, whatever the collector send
   assert.ok(jobs.length > 0, "there are jobs to check");
   assert.ok(jobs.every((u) => /^https:\/\/www\.ebth\.com\//.test(u) && !/mailto/.test(u)), jobs.join(" "));
 });
+
+// ---------------------------------------------------------------- categories
+test("categories: every lot gets one, from its title, and a rename re-sorts it", { skip: skipSale }, async () => {
+  const { t, dash, lots, search } = await loaded();
+  assert.equal(await t.count("lots", "category is null"), 0, "no lot is left without a category");
+  assert.equal((await t.one("select category from lots where item_id=$1", [LOT_ID])).category, "Watches");
+  assert.equal((await t.one("select category from lots where item_id=$1", [WIENER()])).category, "Jewelry, silver");
+  await t.db.query("update lots set name = 'Sterling Silver Pitcher' where item_id = $1", [WIENER()]);
+  assert.equal((await t.one("select category from lots where item_id=$1", [WIENER()])).category, "Sterling and silver");
+  const lot = (await t.db.query("select dash_lot($1,$2) r", [dash, WIENER()])).rows[0].r;
+  assert.equal(lot.category, "Sterling and silver", "the lot page gets it too");
+  const other = await t.one("select count(*)::int n from lots where category = 'Other'");
+  assert.ok(other.n < lots.size * 0.15, "few lots are left as Other");
+});
+
+test("categories: filter, sort, and the list with open counts", { skip: skipSale }, async () => {
+  const { t, dash, search } = await loaded();
+  const cats = (await t.db.query("select dash_categories($1, $2::timestamptz) r", [dash, at(T0, 10)])).rows[0].r;
+  assert.ok(cats.some((c) => c.category === "Watches"));
+  assert.equal(cats.reduce((n, c) => n + c.total, 0), await t.count("lots"), "every lot is counted once");
+  assert.equal(cats.reduce((n, c) => n + c.open, 0), (await search({ status: "open", limit: 1 })).total, "open counts add up to the open lots");
+  const jew = await search({ status: "all", category: "Jewelry, gold", limit: 200 });
+  assert.ok(jew.total > 0);
+  assert.ok(jew.rows.every((r) => r.category === "Jewelry, gold"), "only that category comes back");
+  assert.equal(jew.total, await t.count("lots", "category = 'Jewelry, gold'"));
+  const asc = (await search({ status: "all", sort: "category", limit: 200 })).rows.map((r) => (r.category || "").toLowerCase());
+  assert.deepEqual(asc, [...asc].sort(), "A to Z by default");
+  const desc = (await search({ status: "all", sort: "category", dir: "desc", limit: 200 })).rows.map((r) => (r.category || "").toLowerCase());
+  assert.deepEqual(desc, [...desc].sort().reverse());
+  assert.equal((await search({ status: "all", category: "No Such Category", limit: 5 })).total, 0);
+});

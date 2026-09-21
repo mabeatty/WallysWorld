@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { rpc, type Search } from "@/lib/supabase";
+import { rpc, type CategoryCount, type Search } from "@/lib/supabase";
 import { headroom, maxBidState, money, range, timeLeft, when } from "@/lib/format";
 import ValuationCell from "../ValuationCell";
 
@@ -20,8 +20,8 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
   const status = ["open", "closed", "all"].includes(get("status")) ? get("status") : "open";
   const rawSort = get("sort");
   const sort = rawSort === "bid_asc" || rawSort === "bid_desc" ? "bid"
-    : ["ends", "bid", "estimate", "gap", "seen", "name"].includes(rawSort) ? rawSort : "ends";
-  const defaultDir = (k: string) => (k === "ends" || k === "name" ? "asc" : "desc");
+    : ["ends", "bid", "estimate", "gap", "seen", "name", "category"].includes(rawSort) ? rawSort : "ends";
+  const defaultDir = (k: string) => (k === "ends" || k === "name" || k === "category" ? "asc" : "desc");
   const dir = get("dir") === "asc" || get("dir") === "desc" ? get("dir")
     : rawSort === "bid_asc" ? "asc" : defaultDir(sort);
   const estimate = ["any", "with", "without"].includes(get("estimate")) ? get("estimate") : "any";
@@ -29,16 +29,17 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
   const minBid = digits(get("min_bid"));
   const maxBid = digits(get("max_bid"));
   const tracked = get("tracked") === "on";
+  const category = get("category");
   const page = Math.max(1, parseInt(get("page") || "1", 10) || 1);
 
-  const r = await rpc<Search>("dash_search", {
+  const [r, cats] = await Promise.all([rpc<Search>("dash_search", {
     p: {
-      q, status, sort, dir, estimate,
+      q, status, sort, dir, estimate, category,
       min_bid: minBid, max_bid: maxBid, within_hours: within,
       tracked: tracked ? true : undefined,
       limit: PER_PAGE, offset: (page - 1) * PER_PAGE,
     },
-  });
+  }), rpc<CategoryCount[]>("dash_categories")]);
   const now = Date.now();
 
   const link = (p: number) => {
@@ -49,6 +50,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
     if (minBid) u.set("min_bid", minBid);
     if (maxBid) u.set("max_bid", maxBid);
     if (tracked) u.set("tracked", "on");
+    if (category) u.set("category", category);
     u.set("page", String(p));
     return `/lots?${u.toString()}`;
   };
@@ -61,6 +63,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
     if (minBid) u.set("min_bid", minBid);
     if (maxBid) u.set("max_bid", maxBid);
     if (tracked) u.set("tracked", "on");
+    if (category) u.set("category", category);
     u.set("sort", key);
     u.set("dir", key === sort ? (dir === "asc" ? "desc" : "asc") : defaultDir(key));
     return `/lots?${u.toString()}`;
@@ -106,6 +109,12 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
         <label>Current bid up to
           <input type="text" inputMode="decimal" name="max_bid" defaultValue={maxBid} placeholder="no limit" />
         </label>
+        <label>Category
+          <select name="category" defaultValue={category}>
+            <option value="">All categories</option>
+            {cats.map((c) => <option key={c.category} value={c.category}>{c.category} ({c.open} open)</option>)}
+          </select>
+        </label>
         <label>Your estimate
           <select name="estimate" defaultValue={estimate}>
             <option value="any">Any</option><option value="with">Has an estimate</option><option value="without">No estimate yet</option>
@@ -127,6 +136,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
           <thead>
             <tr>
               {head("name", "Lot")}
+              {head("category", "Category", "hide-sm")}
               {head("bid", "Bid", "num")}
               {head("estimate", "Your estimate")}
               <th className="hide-sm">Source and date</th>
@@ -142,6 +152,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
               return (
                 <tr key={l.item_id}>
                   <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>
+                  <td className="hide-sm">{l.category ?? "-"}</td>
                   <td className="num">{money(l.high_bid)}</td>
                   <td>
                     {l.est_low != null || l.est_high != null ? (

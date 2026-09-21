@@ -80,7 +80,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
       ) : (
         <table>
-          <thead><tr><th>Lot</th><th className="num">Bid</th><th className="hide-sm">Estimate</th><th className="hide-sm">Source and date</th><th className="hide-sm">Headroom</th><th>Time left</th></tr></thead>
+          <thead><tr><th>Lot</th><th className="hide-sm">Category</th><th className="num">Bid</th><th className="hide-sm">Estimate</th><th className="hide-sm">Source and date</th><th className="hide-sm">Headroom</th><th>Time left</th></tr></thead>
           <tbody>
             {ests.rows.map((l) => {
               const hd = headroom(l.est_low, l.high_bid);
@@ -88,6 +88,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               return (
                 <tr key={l.item_id}>
                   <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>
+                  <td className="hide-sm">{l.category ?? "-"}</td>
                   <td className="num">{money(l.high_bid)}</td>
                   <td className="hide-sm">{range(l.est_low, l.est_high)}</td>
                   <td className="hide-sm"><ValuationCell l={l} /></td>
@@ -109,6 +110,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <thead>
             <tr>
               {sortHead("name", "Lot")}
+              {sortHead("category", "Category", "hide-sm")}
               {sortHead("bid", "High bid", "num")}
               <th className="num hide-sm">Bids</th>
               <th className="num hide-sm">Bidders</th>
@@ -127,6 +129,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               return (
                 <tr key={l.item_id}>
                   <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>
+                  <td className="hide-sm">{l.category ?? "-"}</td>
                   <td className="num">{money(l.high_bid)}{stale ? <span className="sub">as of {when(l.snapshot_ts)}</span> : null}</td>
                   <td className="num hide-sm">{l.bids_count ?? "-"}</td>
                   <td className="num hide-sm">{l.unique_bidders ?? "-"}</td>

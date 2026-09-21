@@ -36,6 +36,7 @@ export type Lot = {
   state: string | null; high_bid: number | null; min_next_bid: number | null;
   bids_count: number | null; unique_bidders: number | null; extended: boolean | null; snapshot_ts: string | null;
   // present on search results when you have entered an estimate
+  category?: string | null;
   est_low?: number | null; est_high?: number | null; max_bid?: number | null;
   confidence?: string | null; est_notes?: string | null; est_sources?: string | null; est_updated?: string | null; gap?: number | null;
 };
@@ -46,3 +47,5 @@ export type Estimate = {
 };
 
 export type Search = { total: number; limit: number; offset: number; rows: Lot[] };
+
+export type CategoryCount = { category: string; open: number; total: number };
