@@ -90,7 +90,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <div className="tools"><RefreshButton ids={ests.rows.map((r) => r.item_id)} returnTo={here()} anchor="estimates" /></div>
           <ResultsTable
             rows={ests.rows} now={now.getTime()} sort={es.sort} dir={es.dir} sortHref={estimatesHref}
-            cols={["name", "category", "ends", "bid", "source", "worst", "dealer", "base", "best"]}
+            cols={["name", "category", "ends", "bid", "source", "dealer", "worst", "base", "best"]}
           />
         </>
       )}
@@ -104,7 +104,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <div className="tools"><RefreshButton ids={closing.rows.map((r) => r.item_id)} returnTo={here()} anchor="closing" /></div>
           <ResultsTable
             rows={closing.rows} now={now.getTime()} sort={cs.sort} dir={cs.dir} sortHref={closingHref} endsStyle="bar"
-            cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "worst", "dealer", "base", "best"]}
+            cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "dealer", "worst", "base", "best"]}
           />
         </>
       )}
