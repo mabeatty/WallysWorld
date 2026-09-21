@@ -41,7 +41,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
         <label>Margin to keep, %<input type="text" inputMode="decimal" name="margin" defaultValue={pct(math.margin)} /></label>
         <button type="submit">Save</button>
       </form>
-      <p className="note">The 25% buyer&apos;s premium comes from a third-party guide, not from EBTH, so confirm it against an invoice. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, shipping, and sales tax.</p>
+      <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, shipping, and sales tax.</p>
 
       <h2>Connect the Chrome extension</h2>
       <ol className="steps">

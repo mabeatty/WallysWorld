@@ -99,7 +99,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
           ) : null}
           {r.bid_math ? (
             <p className="note" style={{ marginTop: 8 }}>
-              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium. Profit and ROI are what you would make if you won at the current bid: the case value less its resale fee, less the bid plus the buyer&apos;s premium, and ROI is that profit as a percent of what you pay. Change the premium and margin on the Setup page.
+              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin{r.bid_math.premium > 0 ? <>, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium</> : null}. Profit and ROI are what you would make if you won at the current bid: the case value less its resale fee, less the bid{r.bid_math.premium > 0 ? " plus the buyer's premium" : ""}, and ROI is that profit as a percent of what you pay. Change the premium and margin on the Setup page.
             </p>
           ) : null}
         </>
