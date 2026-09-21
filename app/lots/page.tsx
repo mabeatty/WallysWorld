@@ -122,7 +122,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
           <div className="tools"><RefreshButton ids={openIds} returnTo={pageHref(page)} label="Refresh bids on these results" /></div>
           <ResultsTable
             rows={r.rows} now={now} sort={sort} dir={dir} sortHref={sortHref}
-            cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "worst", "base", "best", "dealer"]}
+            cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "worst", "dealer", "base", "best"]}
           />
         </>
       )}

@@ -109,7 +109,7 @@ export default async function Watches({ searchParams }: { searchParams: Promise<
           <Pager page={page} pages={pages} href={pageHref} />
           <ResultsTable
             rows={r.rows} now={now} sort={sort} dir={dir} sortHref={sortHref}
-            cols={["name", "ends", "bid", "bids", "bidders", "source", "worst", "base", "best", "dealer"]}
+            cols={["name", "ends", "bid", "bids", "bidders", "source", "worst", "dealer", "base", "best"]}
           />
           <Pager page={page} pages={pages} href={pageHref} />
         </>
