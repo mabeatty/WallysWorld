@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { rpc, type Search } from "@/lib/supabase";
 import { headroom, maxBidState, money, range, timeLeft, when } from "@/lib/format";
+import ValuationCell from "../ValuationCell";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
               {head("name", "Lot")}
               {head("bid", "Bid", "num")}
               {head("estimate", "Your estimate")}
+              <th className="hide-sm">Source and date</th>
               {head("gap", "Headroom", "hide-sm")}
               {head("ends", "Closes")}
             </tr>
@@ -146,6 +148,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
                       <>{range(l.est_low, l.est_high)}{l.confidence ? <span className="sub">{l.confidence} confidence</span> : null}</>
                     ) : <span className="neg">none</span>}
                   </td>
+                  <td className="hide-sm"><ValuationCell l={l} /></td>
                   <td className="hide-sm">
                     {h ? <span className={h.positive ? "pos" : "neg"}>{h.text}</span> : null}
                     {mb ? <span className={`chip ${mb.tone}`} style={{ marginLeft: h ? 8 : 0 }}>{mb.label}</span> : null}

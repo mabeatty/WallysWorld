@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { rpc, type Estimate, type Lot } from "@/lib/supabase";
-import { headroom, maxBidState, money, range, when } from "@/lib/format";
+import { dateOnly, headroom, maxBidState, money, range, when } from "@/lib/format";
 import { clearEstimate, saveEstimate } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +57,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
       {flag("error") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("error")}</p></div>}
       {est ? (
         <p className="note">
-          Worth {range(est.est_low, est.est_high)}{est.confidence ? `, ${est.confidence} confidence` : ""}.
+          Worth {range(est.est_low, est.est_high)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Valued {dateOnly(est.updated_at)}.
           {h ? <> Headroom over the current bid: <span className={h.positive ? "pos" : "neg"}>{h.text}</span>.</> : null}
           {mb ? <> <span className={`chip ${mb.tone}`}>{mb.label}</span></> : null}
         </p>

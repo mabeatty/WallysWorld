@@ -488,6 +488,8 @@ test("estimates: saved, shown in search and on the lot, searchable, sortable by 
   assert.equal(Number(byGap.rows[0].max_bid), 400);
   assert.ok(Number(byGap.rows[1].gap) < 0, "the Rolex is already above its low estimate");
   assert.equal((await search({ status: "all", q: "signature" })).rows[0].item_id, w, "your notes are searchable");
+  assert.equal(byGap.rows[0].est_sources, "https://www.ragoarts.com/x", "search rows carry the sources");
+  assert.ok(byGap.rows[0].est_updated, "and the date saved");
   const lot = (await t.db.query("select dash_lot($1,$2) r", [dash, w])).rows[0].r;
   assert.deepEqual([Number(lot.estimate.est_low), Number(lot.estimate.est_high), lot.estimate.confidence], [800, 1500, "medium"]);
   await setEst(w, 900, 1500, 450, "high", "revised", null);                   // update in place

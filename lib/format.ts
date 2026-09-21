@@ -54,3 +54,29 @@ export function maxBidState(l: { max_bid?: number | null; min_next_bid?: number 
     ? { label: `Under your max bid of ${money(l.max_bid)}`, tone: "go" as const }
     : { label: `Over your max bid of ${money(l.max_bid)}`, tone: "over" as const };
 }
+
+// "Sep 20": the day something was recorded.
+export function dateOnly(ts: string | null | undefined) {
+  if (!ts) return "-";
+  return new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "short", day: "numeric" }).format(new Date(ts));
+}
+
+// Turns the free-text sources of a valuation (one per line, usually links) into a short label for a table cell:
+// the first source, as a site name when it is a link, and how many more there are. Only http(s) links become links.
+export function valuationSource(sources: string | null | undefined) {
+  const lines = (sources ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+  const first = lines[0];
+  let label = first.length > 30 ? first.slice(0, 29) + "\u2026" : first;
+  let href: string | null = null;
+  if (/^https?:\/\//i.test(first)) {
+    try {
+      const u = new URL(first);
+      label = u.hostname.replace(/^www\./, "");
+      href = u.href;
+    } catch {
+      /* not a usable link: show it as text */
+    }
+  }
+  return { label, href, more: lines.length - 1, title: lines.join("\n") };
+}

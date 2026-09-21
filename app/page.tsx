@@ -3,6 +3,7 @@ import { rpc, type Lot, type Search } from "@/lib/supabase";
 import { ago, headroom, maxBidState, money, range, timeLeft, when } from "@/lib/format";
 import { readSort, nextDir } from "@/lib/sort";
 import { resume, setPaused } from "./actions";
+import ValuationCell from "./ValuationCell";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
         <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
       ) : (
         <table>
-          <thead><tr><th>Lot</th><th className="num">Bid</th><th className="hide-sm">Estimate</th><th className="hide-sm">Headroom</th><th>Time left</th></tr></thead>
+          <thead><tr><th>Lot</th><th className="num">Bid</th><th className="hide-sm">Estimate</th><th className="hide-sm">Source and date</th><th className="hide-sm">Headroom</th><th>Time left</th></tr></thead>
           <tbody>
             {ests.rows.map((l) => {
               const hd = headroom(l.est_low, l.high_bid);
@@ -89,6 +90,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>
                   <td className="num">{money(l.high_bid)}</td>
                   <td className="hide-sm">{range(l.est_low, l.est_high)}</td>
+                  <td className="hide-sm"><ValuationCell l={l} /></td>
                   <td className="hide-sm">{hd ? <span className={hd.positive ? "pos" : "neg"}>{hd.text}</span> : null}{mb ? <span className={`chip ${mb.tone}`} style={{ marginLeft: hd ? 8 : 0 }}>{mb.label}</span> : null}</td>
                   <td>{timeLeft(l.ends_at, now.getTime()).label}</td>
                 </tr>
@@ -111,6 +113,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
               <th className="num hide-sm">Bids</th>
               <th className="num hide-sm">Bidders</th>
               {sortHead("estimate", "Your estimate")}
+              <th className="hide-sm">Source and date</th>
               {sortHead("gap", "Headroom", "hide-sm")}
               {sortHead("ends", "Time left")}
             </tr>
@@ -128,6 +131,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
                   <td className="num hide-sm">{l.bids_count ?? "-"}</td>
                   <td className="num hide-sm">{l.unique_bidders ?? "-"}</td>
                   <td>{l.est_low != null || l.est_high != null ? range(l.est_low, l.est_high) : <span className="neg">none</span>}</td>
+                  <td className="hide-sm"><ValuationCell l={l} /></td>
                   <td className="hide-sm">
                     {hd ? <span className={hd.positive ? "pos" : "neg"}>{hd.text}</span> : null}
                     {mb ? <span className={`chip ${mb.tone}`} style={{ marginLeft: hd ? 8 : 0 }}>{mb.label}</span> : null}
