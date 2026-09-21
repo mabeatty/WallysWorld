@@ -1,10 +1,17 @@
 // Column sorting for lot tables: which column, which direction, and what a click on a heading does.
-export const SORT_KEYS = ["ends", "bid", "bids", "bidders", "estimate", "source", "gap", "max", "room", "name", "category"];
+export const SORT_KEYS = [
+  "ends", "bid", "bids", "bidders", "source", "name", "category",
+  "worst", "worst_gap", "worst_room", "base", "base_gap", "base_room", "best", "best_gap", "best_room",
+];
+
+// Addresses saved before the three cases existed: the low estimate is now the worst case.
+const LEGACY: Record<string, string> = { estimate: "worst", gap: "worst_gap", room: "worst_room", max: "worst_room" };
 
 export const defaultDir = (key: string) => (key === "ends" || key === "name" || key === "category" ? "asc" : "desc");
 
 export function readSort(rawSort: string, rawDir: string) {
-  const sort = SORT_KEYS.includes(rawSort) ? rawSort : "ends";
+  const wanted = LEGACY[rawSort] ?? rawSort;
+  const sort = SORT_KEYS.includes(wanted) ? wanted : "ends";
   const dir = rawDir === "asc" || rawDir === "desc" ? rawDir : defaultDir(sort);
   return { sort, dir };
 }

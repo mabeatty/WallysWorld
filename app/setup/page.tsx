@@ -33,7 +33,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       </header>
 
       <h2 id="bidmath">Bid math</h2>
-      <p className="note">Each lot&apos;s calculated max bid is the most you can pay at the hammer and still keep your margin: the low estimate, less the resale fee, less your margin, divided by one plus the buyer&apos;s premium.</p>
+      <p className="note">Each lot&apos;s calculated max bid is the most you can pay at the hammer and still keep your margin, worked out separately for the worst, base and best case: that case&apos;s value, less the resale fee, less your margin, divided by one plus the buyer&apos;s premium.</p>
       {flag("saved") && <div className="saved" role="status">Saved. Calculated max bids now use these numbers.</div>}
       {flag("error") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("error")}</p></div>}
       <form action={saveBidMath} className="bidmath">

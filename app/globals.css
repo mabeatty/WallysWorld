@@ -18,7 +18,7 @@ body {
 }
 a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
 a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-main { max-width: 1040px; margin: 0 auto; padding: 40px 24px 96px; }
+main { max-width: 1400px; margin: 0 auto; padding: 40px 24px 96px; }
 header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
 h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
 h2 { font-size: 17px; font-weight: 600; margin: 40px 0 4px; }
@@ -106,3 +106,9 @@ form.refresh { display: inline-block; margin: 0 0 8px; }
 form.bidmath { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; margin: 12px 0; }
 form.bidmath label { display: block; font-size: 13px; color: var(--muted); }
 form.bidmath input { display: block; width: 110px; margin-top: 4px; }
+
+.tablewrap { overflow-x: auto; }
+th.group { text-align: center; color: var(--ink); border-bottom: 1px solid var(--rule); padding-bottom: 4px; }
+th.grp, td.grp { border-left: 1px solid var(--rule); padding-left: 12px; }
+table.cases { max-width: 720px; }
+table.cases th, table.cases td { padding-right: 20px; }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { rpc, type Estimate, type Lot, type RefreshStatus } from "@/lib/supabase";
-import { dateOnly, headroom, money, overUnder, range, when } from "@/lib/format";
+import { dateOnly, headroom, money, overUnder, when } from "@/lib/format";
 import { clearEstimate, saveEstimate } from "../../actions";
 import { RefreshButton, RefreshNote } from "../../RefreshControls";
 
@@ -26,9 +26,8 @@ export default async function LotPage({ params, searchParams }: { params: Promis
   const d = r.details ?? {};
   const history = r.snapshots;
   const est = r.estimate;
-  const h = est ? headroom(est.est_low, l.high_bid) : null;
-  const next = l.min_next_bid != null ? Number(l.min_next_bid) : Number(l.high_bid ?? 0) + 1;
-  const ou = est && est.max_used != null ? overUnder({ room: Number(est.max_used) - next, max_used: est.max_used, ends_at: l.ends_at }) : null;
+    const next = l.min_next_bid != null ? Number(l.min_next_bid) : Number(l.high_bid ?? 0) + 1;
+  const ownOu = est && est.max_bid != null ? overUnder({ room: Number(est.max_bid) - next, max_used: est.max_bid, ends_at: l.ends_at }) : null;
   const open = !!l.ends_at && new Date(l.ends_at).getTime() > Date.now();
   const pct = (n: number) => `${Math.round(n * 1000) / 10}%`;
 
@@ -68,25 +67,47 @@ export default async function LotPage({ params, searchParams }: { params: Promis
       {est ? (
         <>
           <p className="note">
-            Worth {range(est.est_low, est.est_high)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Valued {dateOnly(est.updated_at)}.
-            {h ? <> Headroom over the current bid: <span className={h.positive ? "pos" : "neg"}>{h.text}</span>.</> : null}
-            {est.max_used != null ? <> Max bid <b>{money(est.max_used)}</b> ({est.max_bid != null ? "your number" : "calculated"}).</> : null}
-            {ou ? <> <span className={`chip ${ou.tone}`}>{ou.label}</span></> : null}
+            Valued {dateOnly(est.updated_at)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Worst case is your low estimate, best case your high, and base case the midpoint.
           </p>
-          {est.max_calc != null && est.est_low != null && r.bid_math ? (
-            <p className="note">
-              Calculated max bid: the low estimate {money(est.est_low)}, less a {money(est.fee)} resale fee, less a {pct(r.bid_math.margin)} margin, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium, is {money(est.max_calc)}. Change the premium and margin on the Setup page.
+          <table className="cases">
+            <thead><tr><th>Case</th><th className="num">Value</th><th>Headroom</th><th className="num">Max bid</th><th>Over / under</th></tr></thead>
+            <tbody>
+              {(["worst", "base", "best"] as const).map((k) => {
+                const c = est.cases?.[k];
+                if (!c) return null;
+                const h = headroom(c.value, l.high_bid);
+                const ou = overUnder({ room: Number(c.max) - next, max_used: c.max, ends_at: l.ends_at });
+                return (
+                  <tr key={k}>
+                    <td>{k === "worst" ? "Worst" : k === "base" ? "Base" : "Best"}</td>
+                    <td className="num">{money(c.value)}</td>
+                    <td>{h ? <span className={h.positive ? "pos" : "neg"}>{h.text}</span> : "-"}</td>
+                    <td className="num">{money(c.max)}</td>
+                    <td>{ou ? <span className={`chip ${ou.tone}`}>{ou.label}</span> : <span className="neg">-</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {est.max_bid != null ? (
+            <p className="note" style={{ marginTop: 8 }}>
+              Your own max bid: <b>{money(est.max_bid)}</b>{ownOu ? <> <span className={`chip ${ownOu.tone}`}>{ownOu.label}</span></> : null}
+            </p>
+          ) : null}
+          {r.bid_math ? (
+            <p className="note" style={{ marginTop: 8 }}>
+              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium. Change the premium and margin on the Setup page.
             </p>
           ) : null}
         </>
       ) : (
-        <p className="note">Nothing recorded yet. Add what you think this lot could resell for, and the most you would bid.</p>
+        <p className="note">Nothing recorded yet. Add what you think this lot could resell for at worst and at best, and the most you would bid.</p>
       )}
       <form action={saveEstimate} className="estimate">
         <input type="hidden" name="id" value={l.item_id} />
-        <label>Low estimate<input type="text" inputMode="decimal" name="low" defaultValue={est?.est_low ?? ""} placeholder="$" /></label>
-        <label>High estimate<input type="text" inputMode="decimal" name="high" defaultValue={est?.est_high ?? ""} placeholder="$" /></label>
-        <label>Your own max bid<input type="text" inputMode="decimal" name="max_bid" defaultValue={est?.max_bid ?? ""} placeholder={est?.max_calc != null ? `${money(est.max_calc)} calculated` : "$"} /><span className="sub">Leave blank to use the calculated one</span></label>
+        <label>Low estimate (worst case)<input type="text" inputMode="decimal" name="low" defaultValue={est?.est_low ?? ""} placeholder="$" /></label>
+        <label>High estimate (best case)<input type="text" inputMode="decimal" name="high" defaultValue={est?.est_high ?? ""} placeholder="$" /></label>
+        <label>Your own max bid<input type="text" inputMode="decimal" name="max_bid" defaultValue={est?.max_bid ?? ""} placeholder="$" /><span className="sub">Optional. Shown on this page only</span></label>
         <label>Confidence
           <select name="confidence" defaultValue={est?.confidence ?? ""}>
             <option value="">Not set</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>

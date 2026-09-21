@@ -484,9 +484,9 @@ test("estimates: saved, shown in search and on the lot, searchable, sortable by 
   assert.equal((await search({ status: "all", estimate: "without", limit: 1 })).total, (await search({ status: "all", limit: 1 })).total - 2);
   const byGap = await search({ status: "all", estimate: "with", sort: "gap" });
   assert.equal(byGap.rows[0].item_id, w, "the lot with the most headroom first");
-  assert.equal(Number(byGap.rows[0].gap), 800 - Number(byGap.rows[0].high_bid));
+  assert.equal(Number(byGap.rows[0].gap_worst), 800 - Number(byGap.rows[0].high_bid));
   assert.equal(Number(byGap.rows[0].max_bid), 400);
-  assert.ok(Number(byGap.rows[1].gap) < 0, "the Rolex is already above its low estimate");
+  assert.ok(Number(byGap.rows[1].gap_worst) < 0, "the Rolex is already above its low estimate");
   assert.equal((await search({ status: "all", q: "signature" })).rows[0].item_id, w, "your notes are searchable");
   assert.equal(byGap.rows[0].est_sources, "https://www.ragoarts.com/x", "search rows carry the sources");
   assert.ok(byGap.rows[0].est_updated, "and the date saved");
@@ -543,9 +543,9 @@ test("every column sorts both ways, and lots without an estimate stay at the bot
   assert.deepEqual(estAsc.slice(0, 3), [third, w, LOT_ID], "lowest first");
   assert.equal(estAsc.length, 200, "a full page comes back after the estimated lots");
 
-  const gapAsc = (await search({ status: "all", estimate: "with", sort: "gap", dir: "asc" })).rows.map((r) => Number(r.gap));
+  const gapAsc = (await search({ status: "all", estimate: "with", sort: "gap", dir: "asc" })).rows.map((r) => Number(r.gap_worst));
   assert.deepEqual(gapAsc, [...gapAsc].sort((a, b) => a - b));
-  const gapDesc = (await search({ status: "all", estimate: "with", sort: "gap", dir: "desc" })).rows.map((r) => Number(r.gap));
+  const gapDesc = (await search({ status: "all", estimate: "with", sort: "gap", dir: "desc" })).rows.map((r) => Number(r.gap_worst));
   assert.deepEqual(gapDesc, [...gapDesc].sort((a, b) => b - a));
 
   const ends = (await search({ status: "all", limit: 200, sort: "ends", dir: "desc" })).rows.map((r) => new Date(r.ends_at).getTime());
@@ -556,7 +556,7 @@ test("every column sorts both ways, and lots without an estimate stay at the bot
   assert.deepEqual(bidAsc, [...bidAsc].sort((a, b) => a - b));
 
   const defaults = await search({ status: "all", limit: 1, sort: "estimate" });
-  assert.deepEqual([defaults.sort, defaults.dir], ["estimate", "desc"], "estimate defaults to highest first");
+  assert.deepEqual([defaults.sort, defaults.dir], ["worst", "desc"], "the old estimate key is the worst case, highest first");
   assert.equal((await search({ status: "all", limit: 1, sort: "ends" })).dir, "asc");
   assert.equal((await search({ status: "all", limit: 1, sort: "bid_asc" })).dir, "asc", "the older names still work");
   assert.equal((await search({ status: "all", limit: 1, sort: "bid", dir: "sideways" })).dir, "desc", "a bad direction falls back to the default");
@@ -631,6 +631,10 @@ test("resale fee follows the tiers and the calculated max bid follows from it", 
   assert.equal(await max(5500), 3439);
   assert.equal(await max(2300), 1404);
   assert.equal((await t.db.query("select suggested_max_bid(null) m")).rows[0].m, null);
+  const bc = async (lo, hi) => (await t.db.query("select base_case($1, $2) b", [lo, hi])).rows[0].b;
+  assert.equal(Number(await bc(14000, 20000)), 17000, "base case is the midpoint");
+  assert.equal(Number(await bc(14000, null)), 14000, "only a low estimate: it is the base case");
+  assert.equal(Number(await bc(null, 20000)), 20000, "only a high estimate: it is the base case");
   await t.db.query("select dash_set_bid_math($1, 0.20, 0.10)", [dash]);
   assert.equal(await max(14000), 9924, "a lower premium and margin raise the ceiling");
   const m = (await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r;
@@ -640,44 +644,68 @@ test("resale fee follows the tiers and the calculated max bid follows from it", 
   await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15)", [t.token]), /invalid token/);
 });
 
-test("over and under: your override wins, otherwise the calculation; every column sorts", { skip: skipSale }, async () => {
+test("three cases: worst, base and best each carry a value, headroom, max bid and room; every column sorts", { skip: skipSale }, async () => {
   const { t, dash, lots, search, setEst } = await loaded();
   const w = WIENER();
   const third = [...lots.keys()].find((id) => id !== w && id !== LOT_ID);
-  await setEst(w, 800, 1500, null, null, "n", null);            // no override: calculated
+  await setEst(w, 800, 1500, null, null, "n", null);
   await setEst(LOT_ID, 3000, 4500, null, null, "n", null);
-  await setEst(third, 50, null, 100000, null, "n", "https://example.com");   // your own max bid
+  await setEst(third, 50000, 90000, null, null, "n", "https://example.com");
   const rows = (await search({ status: "all", estimate: "with", limit: 10 })).rows;
   const by = Object.fromEntries(rows.map((r) => [r.item_id, r]));
-  assert.equal(by[w].max_kind, "calculated");
-  assert.equal(Number(by[w].max_used), 462, "(800 - 120) x 85% / 1.25");
-  assert.equal(Number(by[LOT_ID].max_used), 1849);
-  assert.equal(by[third].max_kind, "yours");
-  assert.equal(Number(by[third].max_used), 100000);
-  assert.ok(Number(by[w].room) > 0, "Wiener is under its max");
-  assert.equal(Number(by[LOT_ID].room), 1849 - Number(by[LOT_ID].min_next_bid), "the Rolex is over, by the gap to the next bid");
-  assert.ok(Number(by[LOT_ID].room) < 0);
+  const n = (x) => Number(x);
+
+  // worst is the low estimate, best the high, base the midpoint
+  assert.deepEqual([n(by[LOT_ID].v_worst), n(by[LOT_ID].v_base), n(by[LOT_ID].v_best)], [3000, 3750, 4500]);
+  // max bid per case, at the 15% margin: (value - resale fee) x 85% / 1.25
+  assert.deepEqual([n(by[LOT_ID].max_worst), n(by[LOT_ID].max_base), n(by[LOT_ID].max_best)], [1849, 2326, 2803]);
+  assert.deepEqual([n(by[w].max_worst), n(by[w].max_base), n(by[w].max_best)], [462, 673, 895]);
+  // headroom is the case value less the current bid; room is the case's max bid less the next bid
+  for (const r of rows) {
+    for (const c of ["worst", "base", "best"]) {
+      assert.equal(n(r["gap_" + c]), n(r["v_" + c]) - n(r.high_bid ?? 0), c + " headroom");
+      assert.equal(n(r["room_" + c]), n(r["max_" + c]) - n(r.min_next_bid ?? (n(r.high_bid ?? 0) + 1)), c + " room");
+    }
+  }
+  assert.ok(n(by[LOT_ID].room_worst) < 0 && n(by[LOT_ID].room_best) < 0, "the Rolex is over even in the best case");
+  assert.ok(n(by[w].room_worst) > 0, "Wiener is under in every case");
+  assert.equal(by[LOT_ID].max_used, undefined, "the single max column is gone");
 
   const ids = async (o) => (await search({ status: "all", estimate: "with", limit: 10, ...o })).rows.map((r) => r.item_id);
-  assert.deepEqual((await ids({ sort: "room", dir: "desc" })).slice(0, 3), [third, w, LOT_ID], "most room first");
-  assert.deepEqual((await ids({ sort: "room", dir: "asc" })).slice(0, 3), [LOT_ID, w, third], "most over first");
-  assert.deepEqual((await ids({ sort: "max", dir: "desc" })).slice(0, 3), [third, LOT_ID, w]);
+  assert.deepEqual((await ids({ sort: "worst_room", dir: "desc" })).slice(0, 3), [third, w, LOT_ID], "most room first");
+  assert.deepEqual((await ids({ sort: "worst_room", dir: "asc" })).slice(0, 3), [LOT_ID, w, third], "most over first");
+  assert.deepEqual(await ids({ sort: "room", dir: "desc" }), await ids({ sort: "worst_room", dir: "desc" }), "old key still works");
+  assert.deepEqual(await ids({ sort: "estimate", dir: "desc" }), await ids({ sort: "worst", dir: "desc" }), "old key still works");
+  for (const k of ["worst", "base", "best"]) {
+    assert.deepEqual((await ids({ sort: k, dir: "desc" })).slice(0, 3), [third, LOT_ID, w], k + " value sorts");
+    assert.deepEqual((await ids({ sort: k, dir: "asc" })).slice(0, 3), [w, LOT_ID, third], k + " value sorts ascending");
+    const gaps = (await search({ status: "all", estimate: "with", limit: 10, sort: k + "_gap", dir: "desc" })).rows.map((r) => n(r["gap_" + k]));
+    assert.deepEqual(gaps, [...gaps].sort((a, b) => b - a), k + " headroom sorts");
+    const rms = (await search({ status: "all", estimate: "with", limit: 10, sort: k + "_room", dir: "asc" })).rows.map((r) => n(r["room_" + k]));
+    assert.deepEqual(rms, [...rms].sort((a, b) => a - b), k + " over/under sorts");
+  }
   assert.deepEqual((await ids({ sort: "source", dir: "desc" })).slice(0, 3), [third, LOT_ID, w], "newest valuation first");
-  assert.deepEqual((await ids({ sort: "source", dir: "asc" })).slice(0, 3), [w, LOT_ID, third]);
-  const all = await search({ status: "all", limit: 200, sort: "room" });
-  assert.equal(all.rows.slice(3).every((r) => r.room == null), true, "lots with no max sort after the ones that have one");
+  const all = await search({ status: "all", limit: 200, sort: "worst_room" });
+  assert.equal(all.rows.slice(3).every((r) => r.room_worst == null), true, "lots with no estimate sort after the ones that have one");
   const bids = (await search({ status: "all", limit: 200, sort: "bids", dir: "desc" })).rows.map((r) => r.bids_count == null ? -1 : Number(r.bids_count));
   const present = bids.filter((b) => b >= 0);
   assert.deepEqual(present, [...present].sort((a, b) => b - a), "bids sorts, empties last");
-  const bidders = (await search({ status: "all", limit: 200, sort: "bidders", dir: "asc" })).rows.map((r) => r.unique_bidders).filter((x) => x != null).map(Number);
-  assert.deepEqual(bidders, [...bidders].sort((a, b) => a - b));
-  // set your own max and it replaces the calculation
+
+  // your own max bid is still stored and returned, but the cases do not change with it
   await setEst(w, 800, 1500, 300, null, "n", null);
   const w2 = (await search({ status: "all", estimate: "with", limit: 10 })).rows.find((r) => r.item_id === w);
-  assert.deepEqual([w2.max_kind, Number(w2.max_used)], ["yours", 300]);
+  assert.equal(n(w2.max_bid), 300);
+  assert.equal(n(w2.max_base), 673);
+  // only one estimate: all three cases are that number
+  await setEst(w, 800, null, null, null, "n", null);
+  const w3 = (await search({ status: "all", estimate: "with", limit: 10 })).rows.find((r) => r.item_id === w);
+  assert.deepEqual([n(w3.v_worst), n(w3.v_base), n(w3.v_best)], [800, 800, 800]);
+
   const lot = (await t.db.query("select dash_lot($1,$2) r", [dash, LOT_ID])).rows[0].r;
-  assert.equal(Number(lot.estimate.max_calc), 1849);
-  assert.equal(Number(lot.estimate.fee), 280, "the resale fee on $3,000");
+  const c = lot.estimate.cases;
+  assert.deepEqual([n(c.worst.value), n(c.base.value), n(c.best.value)], [3000, 3750, 4500]);
+  assert.deepEqual([n(c.worst.max), n(c.base.max), n(c.best.max)], [1849, 2326, 2803]);
+  assert.equal(n(c.base.fee), 328.75, "the resale fee on the $3,750 base case");
   assert.equal(Number(lot.bid_math.premium), 0.25);
 });
 

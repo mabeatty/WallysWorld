@@ -114,7 +114,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
 
       <p className="note" style={{ marginTop: 18 }}>
         {r.total === 0 ? "No lots match." : `Showing ${from}-${to} of ${r.total.toLocaleString("en-US")} lots.`}
-        {r.total === 0 && (q || status !== "open") ? " Try fewer words, or show all lots." : " Click a column heading to sort. Estimates sort by the low value, and lots without one stay at the bottom."}
+        {r.total === 0 && (q || status !== "open") ? " Try fewer words, or show all lots." : " Click a column heading to sort. Lots without an estimate stay at the bottom when you sort by a case."}
       </p>
 
       {r.rows.length > 0 && (
@@ -122,7 +122,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
           <div className="tools"><RefreshButton ids={openIds} returnTo={pageHref(page)} label="Refresh bids on these results" /></div>
           <ResultsTable
             rows={r.rows} now={now} sort={sort} dir={dir} sortHref={sortHref}
-            cols={["name", "category", "bid", "bids", "bidders", "estimate", "source", "gap", "max", "room", "ends"]}
+            cols={["name", "category", "bid", "bids", "bidders", "source", "worst", "base", "best", "ends"]}
           />
         </>
       )}

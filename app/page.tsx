@@ -82,7 +82,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
 
       <h2 id="estimates">Your estimates</h2>
-      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}Click a heading to sort, for example Over / under to see which are still under your max.</p>
+      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}Worst case is your low estimate, best case your high, base case the midpoint. Click any heading to sort, for example an Over / under column to see which lots are still under their max bid.</p>
       {ests.rows.length === 0 ? (
         <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
       ) : (
@@ -90,7 +90,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <div className="tools"><RefreshButton ids={ests.rows.map((r) => r.item_id)} returnTo={here()} anchor="estimates" /></div>
           <ResultsTable
             rows={ests.rows} now={now.getTime()} sort={es.sort} dir={es.dir} sortHref={estimatesHref}
-            cols={["name", "category", "bid", "estimate", "source", "gap", "max", "room", "ends"]}
+            cols={["name", "category", "bid", "source", "worst", "base", "best", "ends"]}
           />
         </>
       )}
@@ -104,7 +104,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <div className="tools"><RefreshButton ids={closing.rows.map((r) => r.item_id)} returnTo={here()} anchor="closing" /></div>
           <ResultsTable
             rows={closing.rows} now={now.getTime()} sort={cs.sort} dir={cs.dir} sortHref={closingHref} endsStyle="bar"
-            cols={["name", "category", "bid", "bids", "bidders", "estimate", "source", "gap", "max", "room", "ends"]}
+            cols={["name", "category", "bid", "bids", "bidders", "source", "worst", "base", "best", "ends"]}
           />
         </>
       )}
