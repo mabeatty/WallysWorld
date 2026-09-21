@@ -74,3 +74,42 @@ export async function clearEstimate(formData: FormData) {
   revalidatePath(`/lots/${id}`);
   redirect(`/lots/${encodeURIComponent(id)}?removed=1#estimate`);
 }
+
+function safePath(raw: string) {
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+}
+
+export async function refreshBids(formData: FormData) {
+  const ids = formData.getAll("id").map(String).filter(Boolean);
+  const returnTo = safePath(String(formData.get("returnTo") ?? "/"));
+  const anchor = String(formData.get("anchor") ?? "").replace(/[^a-z0-9_-]/gi, "");
+  const u = new URL(returnTo, "http://local");
+  try {
+    const r = await rpc<{ queued: number }>("dash_request_refresh", { p_ids: ids });
+    u.searchParams.set("refreshed", String(r.queued));
+    u.searchParams.delete("rerror");
+  } catch (e) {
+    u.searchParams.set("rerror", reason(e));
+    u.searchParams.delete("refreshed");
+  }
+  revalidatePath("/");
+  revalidatePath("/lots");
+  redirect(u.pathname + u.search + (anchor ? "#" + anchor : ""));
+}
+
+export async function saveBidMath(formData: FormData) {
+  const pct = (k: string) => {
+    const n = Number(String(formData.get(k) ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n / 100 : NaN;
+  };
+  let error = "";
+  try {
+    await rpc("dash_set_bid_math", { p_premium: pct("premium"), p_margin: pct("margin") });
+  } catch (e) {
+    error = reason(e);
+  }
+  revalidatePath("/");
+  revalidatePath("/lots");
+  revalidatePath("/setup");
+  redirect("/setup?" + (error ? "error=" + encodeURIComponent(error) : "saved=1") + "#bidmath");
+}

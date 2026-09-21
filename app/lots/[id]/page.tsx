@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { rpc, type Estimate, type Lot } from "@/lib/supabase";
-import { dateOnly, headroom, maxBidState, money, range, when } from "@/lib/format";
+import { rpc, type Estimate, type Lot, type RefreshStatus } from "@/lib/supabase";
+import { dateOnly, headroom, money, overUnder, range, when } from "@/lib/format";
 import { clearEstimate, saveEstimate } from "../../actions";
+import { RefreshButton, RefreshNote } from "../../RefreshControls";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +17,20 @@ export default async function LotPage({ params, searchParams }: { params: Promis
   const { id } = await params;
   const sp = await searchParams;
   const flag = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
-  const r = await rpc<{ lot: Lot | null; category: string | null; details: Detail | null; estimate: Estimate | null; snapshots: Snap[] }>("dash_lot", { p_id: id });
+  const [r, refresh] = await Promise.all([
+    rpc<{ lot: Lot | null; category: string | null; details: Detail | null; estimate: Estimate | null; bid_math: { premium: number; margin: number } | null; snapshots: Snap[] }>("dash_lot", { p_id: id }),
+    rpc<RefreshStatus>("dash_refresh_status"),
+  ]);
   if (!r.lot) notFound();
   const l = r.lot;
   const d = r.details ?? {};
   const history = r.snapshots;
   const est = r.estimate;
   const h = est ? headroom(est.est_low, l.high_bid) : null;
-  const mb = est ? maxBidState({ max_bid: est.max_bid, min_next_bid: l.min_next_bid, high_bid: l.high_bid, ends_at: l.ends_at }) : null;
+  const next = l.min_next_bid != null ? Number(l.min_next_bid) : Number(l.high_bid ?? 0) + 1;
+  const ou = est && est.max_used != null ? overUnder({ room: Number(est.max_used) - next, max_used: est.max_used, ends_at: l.ends_at }) : null;
+  const open = !!l.ends_at && new Date(l.ends_at).getTime() > Date.now();
+  const pct = (n: number) => `${Math.round(n * 1000) / 10}%`;
 
   return (
     <>
@@ -42,6 +49,9 @@ export default async function LotPage({ params, searchParams }: { params: Promis
         <div><span>{l.closeout_done ? "Closed" : "Closes"}</span><b>{when(l.ends_at)}</b></div>
       </div>
 
+      <RefreshNote status={refresh} refreshed={flag("refreshed")} failed={flag("rerror")} />
+      {open && <div className="tools"><RefreshButton ids={[l.item_id]} returnTo={`/lots/${l.item_id}`} label="Refresh this lot's bid" /></div>}
+
       {d.images && d.images.length > 0 && (
         <div className="photos">
           {d.images.slice(0, 8).map((src) => (
@@ -56,11 +66,19 @@ export default async function LotPage({ params, searchParams }: { params: Promis
       {flag("removed") && <div className="saved" role="status">Estimate removed.</div>}
       {flag("error") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("error")}</p></div>}
       {est ? (
-        <p className="note">
-          Worth {range(est.est_low, est.est_high)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Valued {dateOnly(est.updated_at)}.
-          {h ? <> Headroom over the current bid: <span className={h.positive ? "pos" : "neg"}>{h.text}</span>.</> : null}
-          {mb ? <> <span className={`chip ${mb.tone}`}>{mb.label}</span></> : null}
-        </p>
+        <>
+          <p className="note">
+            Worth {range(est.est_low, est.est_high)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Valued {dateOnly(est.updated_at)}.
+            {h ? <> Headroom over the current bid: <span className={h.positive ? "pos" : "neg"}>{h.text}</span>.</> : null}
+            {est.max_used != null ? <> Max bid <b>{money(est.max_used)}</b> ({est.max_bid != null ? "your number" : "calculated"}).</> : null}
+            {ou ? <> <span className={`chip ${ou.tone}`}>{ou.label}</span></> : null}
+          </p>
+          {est.max_calc != null && est.est_low != null && r.bid_math ? (
+            <p className="note">
+              Calculated max bid: the low estimate {money(est.est_low)}, less a {money(est.fee)} resale fee, less a {pct(r.bid_math.margin)} margin, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium, is {money(est.max_calc)}. Change the premium and margin on the Setup page.
+            </p>
+          ) : null}
+        </>
       ) : (
         <p className="note">Nothing recorded yet. Add what you think this lot could resell for, and the most you would bid.</p>
       )}
@@ -68,7 +86,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
         <input type="hidden" name="id" value={l.item_id} />
         <label>Low estimate<input type="text" inputMode="decimal" name="low" defaultValue={est?.est_low ?? ""} placeholder="$" /></label>
         <label>High estimate<input type="text" inputMode="decimal" name="high" defaultValue={est?.est_high ?? ""} placeholder="$" /></label>
-        <label>Most you would bid<input type="text" inputMode="decimal" name="max_bid" defaultValue={est?.max_bid ?? ""} placeholder="$" /></label>
+        <label>Your own max bid<input type="text" inputMode="decimal" name="max_bid" defaultValue={est?.max_bid ?? ""} placeholder={est?.max_calc != null ? `${money(est.max_calc)} calculated` : "$"} /><span className="sub">Leave blank to use the calculated one</span></label>
         <label>Confidence
           <select name="confidence" defaultValue={est?.confidence ?? ""}>
             <option value="">Not set</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>

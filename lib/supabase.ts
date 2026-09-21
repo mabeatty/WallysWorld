@@ -37,6 +37,7 @@ export type Lot = {
   bids_count: number | null; unique_bidders: number | null; extended: boolean | null; snapshot_ts: string | null;
   // present on search results when you have entered an estimate
   category?: string | null;
+  max_used?: number | null; max_kind?: string | null; room?: number | null;
   est_low?: number | null; est_high?: number | null; max_bid?: number | null;
   confidence?: string | null; est_notes?: string | null; est_sources?: string | null; est_updated?: string | null; gap?: number | null;
 };
@@ -44,8 +45,13 @@ export type Lot = {
 export type Estimate = {
   est_low: number | null; est_high: number | null; max_bid: number | null;
   confidence: string | null; notes: string | null; sources: string | null; updated_at: string;
+  max_calc?: number | null; max_used?: number | null; fee?: number | null;
 };
 
 export type Search = { total: number; limit: number; offset: number; rows: Lot[] };
 
 export type CategoryCount = { category: string; open: number; total: number };
+
+export type BidMath = { premium: number; margin: number; tiers: { up_to: number | null; rate: number }[] };
+
+export type RefreshStatus = { waiting: number; halted: boolean; paused: boolean; gap_seconds: number };

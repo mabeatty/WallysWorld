@@ -100,3 +100,9 @@ th a.sortlink:hover { color: var(--ink); text-decoration: underline; }
 th.active { color: var(--ink); }
 .sortmark { display: inline-block; min-width: 12px; margin-left: 4px; font-size: 10px; }
 th.num a.sortlink { display: inline-block; }
+
+form.refresh { display: inline-block; margin: 0 0 8px; }
+.tools { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
+form.bidmath { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; margin: 12px 0; }
+form.bidmath label { display: block; font-size: 13px; color: var(--muted); }
+form.bidmath input { display: block; width: 110px; margin-top: 4px; }

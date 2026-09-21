@@ -21,7 +21,7 @@ await est(wiener, 800, 1500, 400, "medium", "Rago $4,063 (2021), Wright $3,024. 
 await est("14568274", 3000, 4500, 3000, "low", "watch comps", null);            // no source on purpose
 const still = (await db.query("select item_id from lot_latest where ends_at > now() order by ends_at desc limit 2")).rows;
 if (still[0]) await est(still[0].item_id, 900, 1400, 700, "medium", "an open lot", "https://www.liveauctioneers.com/price-result/x\nhttps://www.invaluable.com/y");
-if (still[1]) await est(still[1].item_id, 100, 150, 120, "low", "another open lot", "Spot price x 5.2 oz, melt value");
+if (still[1]) await est(still[1].item_id, 3000, 4200, null, "low", "another open lot", "Spot price x 5.2 oz, melt value");
 console.log(JSON.stringify({ dashTok, wiener }));
 
 const meta = async (fn) => (await db.query(

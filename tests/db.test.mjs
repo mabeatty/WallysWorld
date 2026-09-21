@@ -613,3 +613,116 @@ test("categories: filter, sort, and the list with open counts", { skip: skipSale
   assert.deepEqual(desc, [...desc].sort().reverse());
   assert.equal((await search({ status: "all", category: "No Such Category", limit: 5 })).total, 0);
 });
+
+// ---------------------------------------------------------------- bid math
+test("resale fee follows the tiers and the calculated max bid follows from it", async () => {
+  const t = await fresh();
+  const dash = (await t.one("select value #>> '{}' v from settings where key='dashboard_token'")).v;
+  const fee = async (p) => Number((await t.db.query("select resale_fee($1) f", [p])).rows[0].f);
+  const max = async (low) => Number((await t.db.query("select suggested_max_bid($1) m", [low])).rows[0].m);
+  assert.equal(await fee(0), 0);
+  assert.equal(await fee(500), 75, "15% up to $1,000");
+  assert.equal(await fee(1000), 150);
+  assert.equal(await fee(2000), 215, "then 6.5% on the next dollars");
+  assert.equal(await fee(8000), 587.5, "then 3% above $7,500");
+  assert.equal(await fee(100000), 3347.5);
+  assert.equal(await max(14000), 8998, "(14,000 - 767.50) x 85% / 1.25");
+  assert.equal(await max(9000), 5700);
+  assert.equal(await max(5500), 3439);
+  assert.equal(await max(2300), 1404);
+  assert.equal((await t.db.query("select suggested_max_bid(null) m")).rows[0].m, null);
+  await t.db.query("select dash_set_bid_math($1, 0.20, 0.10)", [dash]);
+  assert.equal(await max(14000), 9924, "a lower premium and margin raise the ceiling");
+  const m = (await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r;
+  assert.deepEqual([Number(m.premium), Number(m.margin), m.tiers.length], [0.2, 0.1, 3]);
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 1.5, 0.1)", [dash]), /premium must be between/);
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.95)", [dash]), /margin must be between/);
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15)", [t.token]), /invalid token/);
+});
+
+test("over and under: your override wins, otherwise the calculation; every column sorts", { skip: skipSale }, async () => {
+  const { t, dash, lots, search, setEst } = await loaded();
+  const w = WIENER();
+  const third = [...lots.keys()].find((id) => id !== w && id !== LOT_ID);
+  await setEst(w, 800, 1500, null, null, "n", null);            // no override: calculated
+  await setEst(LOT_ID, 3000, 4500, null, null, "n", null);
+  await setEst(third, 50, null, 100000, null, "n", "https://example.com");   // your own max bid
+  const rows = (await search({ status: "all", estimate: "with", limit: 10 })).rows;
+  const by = Object.fromEntries(rows.map((r) => [r.item_id, r]));
+  assert.equal(by[w].max_kind, "calculated");
+  assert.equal(Number(by[w].max_used), 462, "(800 - 120) x 85% / 1.25");
+  assert.equal(Number(by[LOT_ID].max_used), 1849);
+  assert.equal(by[third].max_kind, "yours");
+  assert.equal(Number(by[third].max_used), 100000);
+  assert.ok(Number(by[w].room) > 0, "Wiener is under its max");
+  assert.equal(Number(by[LOT_ID].room), 1849 - Number(by[LOT_ID].min_next_bid), "the Rolex is over, by the gap to the next bid");
+  assert.ok(Number(by[LOT_ID].room) < 0);
+
+  const ids = async (o) => (await search({ status: "all", estimate: "with", limit: 10, ...o })).rows.map((r) => r.item_id);
+  assert.deepEqual((await ids({ sort: "room", dir: "desc" })).slice(0, 3), [third, w, LOT_ID], "most room first");
+  assert.deepEqual((await ids({ sort: "room", dir: "asc" })).slice(0, 3), [LOT_ID, w, third], "most over first");
+  assert.deepEqual((await ids({ sort: "max", dir: "desc" })).slice(0, 3), [third, LOT_ID, w]);
+  assert.deepEqual((await ids({ sort: "source", dir: "desc" })).slice(0, 3), [third, LOT_ID, w], "newest valuation first");
+  assert.deepEqual((await ids({ sort: "source", dir: "asc" })).slice(0, 3), [w, LOT_ID, third]);
+  const all = await search({ status: "all", limit: 200, sort: "room" });
+  assert.equal(all.rows.slice(3).every((r) => r.room == null), true, "lots with no max sort after the ones that have one");
+  const bids = (await search({ status: "all", limit: 200, sort: "bids", dir: "desc" })).rows.map((r) => r.bids_count == null ? -1 : Number(r.bids_count));
+  const present = bids.filter((b) => b >= 0);
+  assert.deepEqual(present, [...present].sort((a, b) => b - a), "bids sorts, empties last");
+  const bidders = (await search({ status: "all", limit: 200, sort: "bidders", dir: "asc" })).rows.map((r) => r.unique_bidders).filter((x) => x != null).map(Number);
+  assert.deepEqual(bidders, [...bidders].sort((a, b) => a - b));
+  // set your own max and it replaces the calculation
+  await setEst(w, 800, 1500, 300, null, "n", null);
+  const w2 = (await search({ status: "all", estimate: "with", limit: 10 })).rows.find((r) => r.item_id === w);
+  assert.deepEqual([w2.max_kind, Number(w2.max_used)], ["yours", 300]);
+  const lot = (await t.db.query("select dash_lot($1,$2) r", [dash, LOT_ID])).rows[0].r;
+  assert.equal(Number(lot.estimate.max_calc), 1849);
+  assert.equal(Number(lot.estimate.fee), 280, "the resale fee on $3,000");
+  assert.equal(Number(lot.bid_math.premium), 0.25);
+});
+
+test("refresh: chosen lots are reloaded first, once each, and closing prices follow", { skip: skipSale }, async () => {
+  const { t, dash, lots, setEst } = await loaded();
+  const w = WIENER();
+  const third = [...lots.keys()].find((id) => id !== w && id !== LOT_ID);
+  const req = async (ids, when) => (await t.db.query("select dash_request_refresh($1,$2::text[],$3::timestamptz) r", [dash, ids, when])).rows[0].r;
+
+  // only open lots with an address are queued; unknown ones are skipped
+  let r = await req([w, "no-such-lot"], at(T0, 11));
+  assert.deepEqual([r.asked, r.queued, r.skipped, r.waiting], [2, 1, 1, 1]);
+  r = await req([LOT_ID], at(T0, 12));
+  assert.equal(r.waiting, 2);
+  assert.equal((await req([w, LOT_ID], at(T0, 60 * 24 * 10))).queued, 0, "lots that have already closed are not queued");
+  await assert.rejects(() => t.db.query("select dash_request_refresh($1,$2::text[])", [dash, Array.from({ length: 61 }, (_, i) => "x" + i)]), /at most 60/);
+  assert.equal(await t.count("lots", "tracked and item_id in ('" + w + "')"), 1, "a refreshed lot gets its closing price captured too");
+
+  // a close-out is due, but the refresh goes first
+  await t.db.query("update lots set tracked = true, closeout_done = false, ends_at = $2 where item_id = $1", [third, at(T0, -30)]);
+  const j1 = await t.next(at(T0, 20));
+  assert.deepEqual([j1.kind, j1.item_id], ["detail", w], "the oldest request first");
+  assert.match(j1.url, /^https:\/\/www\.ebth\.com\/items\/\d+/);
+  const j2 = await t.next(at(T0, 21));
+  assert.deepEqual([j2.kind, j2.item_id], ["detail", LOT_ID]);
+  // the collector reports back: a lot page records a fresh bid snapshot
+  const before = await t.count("snapshots", `item_id = '${LOT_ID}'`);
+  await t.ingest(payload(lotDoc(), "/items/14568274-1970-rolex", { job: { kind: "detail", url: j2.url, item_id: LOT_ID } }), at(T0, 22));
+  assert.equal(await t.count("snapshots", `item_id = '${LOT_ID}'`), before + 1);
+  const j3 = await t.next(at(T0, 23));
+  assert.equal(j3.kind, "closeout", "then the ordinary work resumes");
+  assert.equal(j3.item_id, third);
+  assert.equal(await t.count("refresh_requests", "served_at is null"), 0, "each request is served once");
+
+  // asking again requeues it
+  assert.equal((await req([w], at(T0, 30))).queued, 1);
+  const st = (await t.db.query("select dash_refresh_status($1, $2::timestamptz) r", [dash, at(T0, 30)])).rows[0].r;
+  assert.deepEqual([st.waiting, st.halted, st.paused, st.gap_seconds], [1, false, false, 0]);
+  // nothing loads while the collector is stopped, and the status says so
+  await t.set("halt", { reason: "test", at: at(T0, 31) });
+  assert.equal(await t.next(at(T0, 40)), null);
+  assert.equal((await t.db.query("select dash_refresh_status($1, $2::timestamptz) r", [dash, at(T0, 31)])).rows[0].r.halted, true);
+  await t.set("halt", null);
+  await t.db.exec("set role anon");
+  await assert.rejects(() => t.db.query("select dash_request_refresh($1,'{1}'::text[])", [t.token]), /invalid token/);
+  await assert.rejects(() => t.db.query("select * from refresh_requests"), /permission denied/);
+  await t.db.exec("reset role");
+});

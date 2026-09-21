@@ -1,10 +1,10 @@
 // Column sorting for lot tables: which column, which direction, and what a click on a heading does.
-const KEYS = ["ends", "bid", "estimate", "gap", "name", "category"];
+export const SORT_KEYS = ["ends", "bid", "bids", "bidders", "estimate", "source", "gap", "max", "room", "name", "category"];
 
 export const defaultDir = (key: string) => (key === "ends" || key === "name" || key === "category" ? "asc" : "desc");
 
 export function readSort(rawSort: string, rawDir: string) {
-  const sort = KEYS.includes(rawSort) ? rawSort : "ends";
+  const sort = SORT_KEYS.includes(rawSort) ? rawSort : "ends";
   const dir = rawDir === "asc" || rawDir === "desc" ? rawDir : defaultDir(sort);
   return { sort, dir };
 }

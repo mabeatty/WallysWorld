@@ -45,14 +45,14 @@ export function headroom(low: number | null | undefined, bid: number | null | un
   return { text: `${sign}$${Math.abs(Math.round(gap)).toLocaleString("en-US")}${mult}`, positive: gap > 0 };
 }
 
-// Can you still bid within your own maximum?
-export function maxBidState(l: { max_bid?: number | null; min_next_bid?: number | null; high_bid?: number | null; ends_at?: string | null }, now = Date.now()) {
-  if (l.max_bid == null) return null;
+// Where the next bid sits against your max: "Under by $349" (you can still bid) or "Over by $1,501".
+export function overUnder(l: { room?: number | null; max_used?: number | null; ends_at?: string | null }, now = Date.now()) {
+  if (l.max_used == null || l.room == null) return null;
   if (l.ends_at && new Date(l.ends_at).getTime() <= now) return null;
-  const next = l.min_next_bid != null ? Number(l.min_next_bid) : Number(l.high_bid ?? 0) + 1;
-  return next <= Number(l.max_bid)
-    ? { label: `Under your max bid of ${money(l.max_bid)}`, tone: "go" as const }
-    : { label: `Over your max bid of ${money(l.max_bid)}`, tone: "over" as const };
+  const r = Number(l.room);
+  return r >= 0
+    ? { label: `Under by ${money(r)}`, tone: "go" as const, room: r }
+    : { label: `Over by ${money(-r)}`, tone: "over" as const, room: r };
 }
 
 // "Sep 20": the day something was recorded.
