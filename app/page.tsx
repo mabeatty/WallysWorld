@@ -29,7 +29,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     rpc<CategoryCount[]>("dash_categories"),
   ]);
   const watches = cats.find((c) => c.category === "Watches");
-  const watchesHref = "/lots?category=Watches&sort=bid&dir=desc";
+  const watchesHref = "/watches";
   const now = new Date();
   const halt = d.halt;
   const paused = d.paused === true;

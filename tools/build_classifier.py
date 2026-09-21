@@ -7,6 +7,8 @@ R = {}
 R["napkin"]  = r"\y(napkin|key|curtain|teething|pull) rings?\y|\yring toss\y"
 R["lab"]     = r"\ylab[- ]?(grown|created|made)\y|\ymoissanite\y"
 R["watch"]   = r"\ywatch(es)?\y|\ywristwatch\y|\ychronograph\y|\y(rolex|omega|patek|breitling|tag heuer|seiko|movado|bulova|longines|tissot|audemars|vacheron|panerai|hublot|swatch)\y"
+R["fob"]     = r"\y(watch )?fobs?\y|\ywatch chains?\y"
+R["realwatch"] = r"\y(pocket|wrist) ?watch(es)?\y"
 R["light"]   = r"\y(lamps?|chandeliers?|sconces?|lanterns?|torchi[eè]res?|lampshades?|prisms?|bobeches|light fixtures?|pendant (light|lamp|fixture))\y|\ylighting\y"
 R["loose"]   = r"^loose\y"
 R["jew"]     = r"\y(rings?|bracelets?|bangles?|cuffs?|necklaces?|pendants?|earrings?|brooch(es)?|lockets?|chokers?|anklets?|cufflinks?|bolos?|concho|squash blossom|bands?|charms?|lapel pins?|stick pins?|hat pins?|tie (pin|tack|bar|clip))\y|\yjewel(le)?ry\y(?! (box|boxes|case|chest|holder|stand|tray|armoire))"
@@ -43,6 +45,12 @@ def build():
     def rule(key, cat): lines.append(f"  if n ~ '{q(R[key])}' then return '{cat}'; end if;")
     rule("napkin", "Kitchen and household")
     rule("lab", "Lab-grown stones and jewelry")
+    # a fob or a watch chain is jewelry, unless the title says it is a pocket watch or wristwatch
+    lines.append(f"  if n ~ '{q(R['fob'])}' and n !~ '{q(R['realwatch'])}' then")
+    lines.append(f"    if n ~ '{q(R['sterling'])}' then return 'Jewelry, silver'; end if;")
+    lines.append(f"    if n ~ '{q(R['karat'])}' or n ~ '{q(R['gold'])}' then return 'Jewelry, gold'; end if;")
+    lines.append(f"    return 'Jewelry, other';")
+    lines.append(f"  end if;")
     rule("watch", "Watches")
     rule("light", "Lighting")
     rule("loose", "Loose stones")

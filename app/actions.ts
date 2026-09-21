@@ -94,6 +94,7 @@ export async function refreshBids(formData: FormData) {
   }
   revalidatePath("/");
   revalidatePath("/lots");
+  revalidatePath("/watches");
   redirect(u.pathname + u.search + (anchor ? "#" + anchor : ""));
 }
 
