@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "EBTH Watch",
-  "version": "0.5.1",
-  "description": "Sends auction data from ebth.com pages you can already see to your own dashboard.",
+  "name": "Auction Arbitrage Dashboard",
+  "version": "0.6.0",
+  "description": "Sends auction data from ebth.com and catawiki.com pages you can already see to your own dashboard.",
   "permissions": [
     "alarms",
     "storage",
@@ -10,6 +10,7 @@
   ],
   "host_permissions": [
     "https://www.ebth.com/*",
+    "https://www.catawiki.com/*",
     "https://*.supabase.co/*"
   ],
   "background": {
@@ -25,6 +26,16 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.catawiki.com/*"
+      ],
+      "js": [
+        "lib/catawiki.js",
+        "content-catawiki.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "options_ui": {
@@ -32,6 +43,6 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "EBTH Watch settings"
+    "default_title": "Auction Arbitrage Dashboard settings"
   }
 }

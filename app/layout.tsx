@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "EBTH Watch", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Auction Arbitrage Dashboard", robots: { index: false, follow: false } };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

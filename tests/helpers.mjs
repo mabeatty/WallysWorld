@@ -10,9 +10,17 @@ process.env.TZ = "America/Chicago";   // card end times are shown in the browser
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 export const EBTH = require("../extension/lib/ebth.js");
+export const Catawiki = require("../extension/lib/catawiki.js");
 const mig = (f) => fs.readFileSync(path.join(here, "../supabase/migrations", f), "utf8");
 export const MIGRATION_0001 = mig("0001_init.sql");
-export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql"), mig("0004_diagnostics_and_hint.sql"), mig("0005_paged_sales.sql"), mig("0006_estimates_and_search.sql"), mig("0007_sortable_columns.sql"), mig("0008_repair_lot_urls.sql"), mig("0009_estimate_source_in_search.sql"), mig("0010_categories.sql"), mig("0011_bid_math_and_refresh.sql"), mig("0012_three_cases.sql"), mig("0013_roi.sql"), mig("0014_watch_fobs.sql"), mig("0015_dealer_bid.sql"), mig("0016_coins_and_stamps.sql"), mig("0017_multi_category_search.sql"), mig("0018_coin_classifier_fixes.sql"), mig("0019_dash_set_tracked.sql"), mig("0020_starred.sql"), mig("0021_search_unaccent_and_classifier.sql"), mig("0022_catawiki_schema.sql"), mig("0023_catawiki_crawler.sql")].join("\n");
+export const MIGRATION = [MIGRATION_0001, mig("0002_breadth.sql"), mig("0003_full_reads_only.sql"), mig("0004_diagnostics_and_hint.sql"), mig("0005_paged_sales.sql"), mig("0006_estimates_and_search.sql"), mig("0007_sortable_columns.sql"), mig("0008_repair_lot_urls.sql"), mig("0009_estimate_source_in_search.sql"), mig("0010_categories.sql"), mig("0011_bid_math_and_refresh.sql"), mig("0012_three_cases.sql"), mig("0013_roi.sql"), mig("0014_watch_fobs.sql"), mig("0015_dealer_bid.sql"), mig("0016_coins_and_stamps.sql"), mig("0017_multi_category_search.sql"), mig("0018_coin_classifier_fixes.sql"), mig("0019_dash_set_tracked.sql"), mig("0020_starred.sql"), mig("0021_search_unaccent_and_classifier.sql"), mig("0022_catawiki_schema.sql"), mig("0023_catawiki_crawler.sql"), mig("0024_catawiki_upsert_fix.sql"), mig("0025_drop_dead_catawiki_ingest_lot.sql")].join("\n");
+
+const fxCatawiki = path.join(here, "fixtures_catawiki");
+export const CATAWIKI_LIST_FILE = path.join(fxCatawiki, "italian_auction.html");
+export const CATAWIKI_LOT_FILE = path.join(fxCatawiki, "italian_somalia_lot.html");
+export const HAVE_CATAWIKI_FIXTURES = fs.existsSync(CATAWIKI_LIST_FILE) && fs.existsSync(CATAWIKI_LOT_FILE);
+export const catawikiListDoc = () => load(CATAWIKI_LIST_FILE, "https://www.catawiki.com/en/a/1270330-italian-stamp-auction-filarte-no-reserve");
+export const catawikiLotDoc = () => load(CATAWIKI_LOT_FILE, "https://www.catawiki.com/en/l/106581719-italian-somalia-duke-of-the-abruzzi-complete-series-no-185-192");
 
 const fx = path.join(here, "fixtures");
 const find = (re) => fs.readdirSync(fx).filter((f) => re.test(f)).map((f) => path.join(fx, f))[0];

@@ -57,3 +57,21 @@ export async function setCatawikiStarred(formData: FormData) {
   revalidatePath("/catawiki");
   revalidatePath(`/catawiki/${id}`);
 }
+
+export async function addCatawikiSeed(formData: FormData) {
+  const raw = String(formData.get("url") ?? "").trim();
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" || u.hostname !== "www.catawiki.com") return;
+  } catch {
+    return;
+  }
+  const kind = formData.get("kind") === "category" ? "category" : "auction";
+  await rpc("dash_add_catawiki_seed", { p_url: raw, p_kind: kind });
+  revalidatePath("/setup");
+}
+
+export async function removeCatawikiSeed(formData: FormData) {
+  await rpc("dash_remove_catawiki_seed", { p_name: String(formData.get("name") ?? "") });
+  revalidatePath("/setup");
+}

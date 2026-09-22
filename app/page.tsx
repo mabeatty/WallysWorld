@@ -47,7 +47,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
     <>
       <meta httpEquiv="refresh" content="60" />
       <header className="top">
-        <h1>EBTH Watch</h1>
+        <h1>Auction Arbitrage Dashboard</h1>
         <nav className="links"><Link href={watchesHref}>Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link><Link href="/catawiki">Catawiki</Link><Link href="/setup">Setup</Link></nav>
       </header>
 

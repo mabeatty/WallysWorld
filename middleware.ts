@@ -17,7 +17,7 @@ export function middleware(req: NextRequest) {
   }
   return new NextResponse("Password required", {
     status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="EBTH Watch", charset="UTF-8"' },
+    headers: { "WWW-Authenticate": 'Basic realm="Auction Arbitrage Dashboard", charset="UTF-8"' },
   });
 }
 

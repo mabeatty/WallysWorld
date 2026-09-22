@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { rpc, publicKeys, type BidMath } from "@/lib/supabase";
+import { rpc, publicKeys, type BidMath, type CatawikiSetupData } from "@/lib/supabase";
 import { addSeed, removeSeed, saveBidMath } from "../actions";
+import { addCatawikiSeed, removeCatawikiSeed } from "../catawiki/actions";
 import { money } from "@/lib/format";
 import CopyBox from "../CopyBox";
 
@@ -12,9 +13,10 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
   const sp = await searchParams;
   const flag = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
   const { url, anonKey } = publicKeys();
-  const [setup, math] = await Promise.all([
+  const [setup, math, catawikiSetup] = await Promise.all([
     rpc<{ ingest_token: string; seeds: Seed[] }>("dash_setup"),
     rpc<BidMath>("dash_bid_math"),
+    rpc<CatawikiSetupData>("dash_catawiki_setup"),
   ]);
   const pct = (n: number) => String(Math.round(n * 1000) / 10);
   const tiers = math.tiers.map((t, i) => {
@@ -48,7 +50,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
         <li>Get the <code>extension</code> folder from the project files and keep it somewhere permanent on the computer whose Chrome will do the collecting.</li>
         <li>In Chrome, open <code>chrome://extensions</code>, turn on Developer mode, choose Load unpacked, and select the <code>extension</code> folder.</li>
         <li>Open the extension&apos;s settings, paste the connection code below, tick the collect box, and choose Save and test.</li>
-        <li>Sign in to ebth.com in that same Chrome and leave it open. It loads pages in background tabs at a slow pace and stops itself if anything looks wrong.</li>
+        <li>Sign in to ebth.com in that same Chrome and leave it open. It loads pages in background tabs at a slow pace and stops itself if anything looks wrong. Catawiki's own lot and auction pages are public, so no sign-in is needed there -- but EBTH and Catawiki share one pacing budget, so leave both tabs' worth of browsing to the extension rather than running it alongside heavy manual use of either site.</li>
       </ol>
       {missing && (
         <div className="banner" role="alert">
@@ -59,7 +61,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       <CopyBox value={code} />
       <p className="note" style={{ marginTop: 8 }}>This code lets the extension write to your database. Keep it private.</p>
 
-      <h2>Pages to watch</h2>
+      <h2>Pages to watch on EBTH</h2>
       <p className="note">Each page is loaded on a schedule, and every lot on it is recorded. Add sale, category or search pages from ebth.com. The followed-items page needs you signed in.</p>
       <table>
         <thead><tr><th>Name</th><th>Address</th><th></th></tr></thead>
@@ -78,6 +80,39 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       <form action={addSeed} className="inline">
         <input type="url" name="url" placeholder="https://www.ebth.com/sales/..." required aria-label="Page address" />
         <label><input type="checkbox" name="login" /> needs sign-in</label>
+        <button type="submit">Add page</button>
+      </form>
+
+      <h2>Pages to watch on Catawiki</h2>
+      <p className="note">
+        The crawler alternates two kinds of visits to each auction: a list visit finds and refreshes every lot&apos;s identity cheaply, and a
+        detail visit (scheduled automatically, one lot at a time, no setup needed) is what captures its live bid and seller info. Add an
+        auction or a whole category page from catawiki.com below -- no sign-in is needed for either.
+      </p>
+      <table>
+        <thead><tr><th>Name</th><th>Address</th><th>Kind</th><th>Last checked</th><th></th></tr></thead>
+        <tbody>
+          {catawikiSetup.seeds.map((s) => (
+            <tr key={s.name}>
+              <td>{s.name}</td>
+              <td className="name">{s.url}</td>
+              <td>{s.kind}</td>
+              <td>{s.last_job_at ? new Date(s.last_job_at).toLocaleString("en-US") : "never"}</td>
+              <td className="num">
+                <form action={removeCatawikiSeed}><input type="hidden" name="name" value={s.name} /><button className="quiet" type="submit">Remove</button></form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <form action={addCatawikiSeed} className="inline">
+        <input type="url" name="url" placeholder="https://www.catawiki.com/en/a/... or /en/c/..." required aria-label="Page address" />
+        <label>Kind
+          <select name="kind" defaultValue="auction">
+            <option value="auction">Auction page</option>
+            <option value="category">Category page</option>
+          </select>
+        </label>
         <button type="submit">Add page</button>
       </form>
     </>

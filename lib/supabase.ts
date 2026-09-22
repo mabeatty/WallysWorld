@@ -95,3 +95,7 @@ export type CatawikiEstimate = {
 };
 export type CatawikiSnapshot = { id: number; ts: string; high_bid: number | null; watchers_count: number | null; bids_count: number | null };
 export type CatawikiLotDetail = { lot: CatawikiLot | null; estimate: CatawikiEstimate | null; snapshots: CatawikiSnapshot[] };
+
+export type CatawikiSeed = { name: string; url: string; kind: "auction" | "category"; enabled: boolean; last_job_at: string | null };
+export type CatawikiFetch = { id: number; ts: string; source: string; kind: string | null; url: string | null; verdict: string; note: string | null; n_items: number };
+export type CatawikiSetupData = { seeds: CatawikiSeed[]; recent: CatawikiFetch[] };
