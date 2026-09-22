@@ -66,3 +66,32 @@ export type CategoryCount = { category: string; open: number; total: number };
 export type BidMath = { premium: number; margin: number; dealer: number; tiers: { up_to: number | null; rate: number }[] };
 
 export type RefreshStatus = { waiting: number; halted: boolean; paused: boolean; gap_seconds: number };
+
+// Catawiki: a separate platform, separate currency (EUR), separate fee structure (a flat buyer
+// protection fee, not EBTH's tiered resale fee), and Catawiki publishes its own expert estimate on
+// every lot -- gap_to_catawiki_estimate is that estimate's low end minus what you'd actually pay
+// (bid, with the buyer protection fee added), the core arbitrage signal for this platform.
+export type CatawikiLot = {
+  item_id: string; name: string; url: string; category: string | null;
+  ends_at: string | null; high_bid: number | null; is_starting_bid: boolean;
+  no_reserve: boolean; reserve_met: boolean | null; live_format: boolean;
+  watchers_count: number | null; bids_count: number | null;
+  estimate_low: number | null; estimate_high: number | null;
+  shipping_eur: number | null; catalog_number: string | null; condition: string | null;
+  description: string | null; seller_name: string | null; seller_location: string | null;
+  seller_verified: boolean | null; seller_feedback_pct: number | null; seller_objects_sold: number | null;
+  auction_id: string | null; auction_name: string | null; curator: string | null;
+  buyer_protection_fee: number | null; gap_to_catawiki_estimate?: number | null;
+  starred: boolean; tracked: boolean; first_seen: string; snapshot_ts: string | null;
+  est_low?: number | null; est_high?: number | null; max_bid?: number | null;
+  confidence?: string | null; est_notes?: string | null; est_sources?: string | null; est_updated?: string | null;
+};
+
+export type CatawikiSearch = { total: number; limit: number; offset: number; rows: CatawikiLot[] };
+export type CatawikiCategoryCount = { category: string; open: number; total: number };
+export type CatawikiEstimate = {
+  est_low: number | null; est_high: number | null; max_bid: number | null;
+  confidence: string | null; notes: string | null; sources: string | null; updated_at: string;
+};
+export type CatawikiSnapshot = { id: number; ts: string; high_bid: number | null; watchers_count: number | null; bids_count: number | null };
+export type CatawikiLotDetail = { lot: CatawikiLot | null; estimate: CatawikiEstimate | null; snapshots: CatawikiSnapshot[] };

@@ -4,6 +4,10 @@ export function money(n: number | null | undefined) {
   return n == null ? "-" : "$" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+export function moneyEUR(n: number | null | undefined) {
+  return n == null ? "-" : "\u20ac" + Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 export function when(ts: string | null | undefined) {
   if (!ts) return "-";
   return new Intl.DateTimeFormat("en-US", {

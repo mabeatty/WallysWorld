@@ -81,7 +81,7 @@ export default async function Followed({ searchParams }: { searchParams: Promise
     <>
       <header className="top">
         <h1>Followed</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/lots">Find lots</Link><Link href="/catawiki">Catawiki</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <nav className="tabs" aria-label="Which followed lots">

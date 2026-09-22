@@ -83,7 +83,7 @@ export default async function Collectibles({ searchParams }: { searchParams: Pro
     <>
       <header className="top">
         <h1>Collectibles</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link><Link href="/catawiki">Catawiki</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <nav className="tabs" aria-label="Which lots">
