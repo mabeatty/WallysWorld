@@ -102,7 +102,6 @@ export async function refreshBids(formData: FormData) {
 export async function setStarred(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const next = formData.get("next") === "1";
-  const returnTo = safePath(String(formData.get("returnTo") ?? "/"));
   try {
     await rpc("dash_set_starred", { p_id: id, p_starred: next });
   } catch {
@@ -114,7 +113,6 @@ export async function setStarred(formData: FormData) {
   revalidatePath("/collectibles");
   revalidatePath("/followed");
   revalidatePath(`/lots/${id}`);
-  redirect(returnTo);
 }
 
 export async function saveBidMath(formData: FormData) {
