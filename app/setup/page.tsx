@@ -41,9 +41,10 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       <form action={saveBidMath} className="bidmath">
         <label>Buyer&apos;s premium, %<input type="text" inputMode="decimal" name="premium" defaultValue={pct(math.premium)} /></label>
         <label>Margin to keep, %<input type="text" inputMode="decimal" name="margin" defaultValue={pct(math.margin)} /></label>
+        <label>Assumed shipping, $<input type="text" inputMode="decimal" name="shipping" defaultValue={String(math.shipping)} /></label>
         <button type="submit">Save</button>
       </form>
-      <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, shipping, and sales tax.</p>
+      <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, the shipping cost to <em>your</em> buyer when you resell, and sales tax. Assumed shipping, above, is the other direction: what EBTH charges <em>you</em> to receive the lot. EBTH&apos;s real per-lot shipping cost is a live quote based on your ZIP code, not a number on the page, so the collector can&apos;t read it per lot yet -- this flat number stands in for it and comes off every case&apos;s max bid, profit, and ROI the same way a buyer&apos;s premium would.</p>
 
       <h2>Connect the Chrome extension</h2>
       <ol className="steps">

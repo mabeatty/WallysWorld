@@ -15,7 +15,7 @@ async function fresh(settings = {}) {
   await db.exec(MIGRATION);
   const token = (await db.query("select value #>> '{}' t from settings where key='ingest_token'")).rows[0].t;
   const set = async (k, v) => db.query("update settings set value=$2::jsonb where key=$1", [k, JSON.stringify(v)]);
-  await set("min_gap_seconds", 0); await set("timezone", "UTC"); await set("quiet_hours", null);
+  await set("min_gap_seconds", 0); await set("timezone", "UTC"); await set("quiet_hours", null); await set("assumed_shipping", 0);
   for (const [k, v] of Object.entries(settings)) await set(k, v);
   const api = {
     db, token, set,
@@ -850,6 +850,54 @@ test("dealer bid: on every lot with an estimate, sortable, and on the lot page",
   assert.deepEqual([n(d.value), n(d.fee), n(d.proceeds), n(d.max)], [2550, 0, 2550, 1734], "the lot page carries a dealer case");
   assert.equal(n(lot.bid_math.dealer), 0.15);
   assert.equal(n(lot.estimate.cases.worst.value), 3000, "the other cases are unchanged");
+});
+
+test("mandatory shipping acts like a buyer's premium: it comes off max bid, profit and ROI everywhere, worst case through dealer", { skip: skipSale }, async () => {
+  const t = await fresh({ assumed_shipping: 40 });
+  const dash = (await t.one("select value #>> '{}' v from settings where key='dashboard_token'")).v;
+  const n = (x) => Number(x);
+
+  // suggested_max_bid: same formula as before, now with $40 subtracted before dividing by 1.25
+  const max = async (low) => n((await t.db.query("select suggested_max_bid($1) m", [low])).rows[0].m);
+  assert.equal(await max(14000), Math.floor(((14000 - 767.5) * 0.85 - 40) / 1.25), "(14,000 - fee) x 85%, less $40 shipping, / 1.25");
+
+  // case_json (what dash_lot calls): profit and ROI net out shipping alongside the bid x premium
+  const cj = async (v, bid) => (await t.db.query("select case_json($1, $2) c", [v, bid])).rows[0].c;
+  const c = await cj(3750, 3300);
+  const expectedProfit = 3421.25 - (3300 * 1.25 + 40);
+  assert.ok(Math.abs(n(c.profit) - expectedProfit) < 0.01, "profit nets out shipping, not just the bid x premium");
+  assert.ok(Math.abs(n(c.roi) - expectedProfit / (3300 * 1.25 + 40)) < 1e-9);
+
+  // dealer_case_json: a dealer buying outright still pays the same shipping cost
+  const dc = async (w, bid) => (await t.db.query("select dealer_case_json($1, $2) c", [w, bid])).rows[0].c;
+  const d = await dc(10000, 4000);
+  assert.equal(n(d.max), Math.floor((8500 * 0.85 - 40) / 1.25), "dealer max also nets shipping");
+  assert.ok(Math.abs(n(d.profit) - (8500 - (4000 * 1.25 + 40))) < 0.01);
+
+  // dash_bid_math / dash_set_bid_math: the setting round-trips and validates
+  const bm = (await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r;
+  assert.equal(n(bm.shipping), 40);
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, 60)", [dash]);
+  assert.equal(n((await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r.shipping), 60, "shipping is settable via dash_set_bid_math");
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15)", [dash]);
+  assert.equal(n((await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r.shipping), 60, "leaving shipping out keeps it");
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, -5)", [dash]), /assumed shipping must be between/);
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, 40)", [dash]);
+
+  // dash_search duplicates case_json's and dealer_case_json's formulas inline (pre-existing, not
+  // introduced here) -- both copies must agree on the same lot, or the search view and the
+  // single-lot detail page would show different numbers for the same thing.
+  await t.ingest(payload(lotDoc(), LOT_PATH, { job: null }), T0);
+  await t.db.query("select dash_set_estimate($1,$2,$3,$4,$5,$6,$7,$8)", [dash, LOT_ID, 3000, 4500, null, null, "n", null]);
+  const rows = (await t.db.query("select dash_search($1,$2::jsonb,$3::timestamptz) r",
+    [dash, JSON.stringify({ status: "all", estimate: "with", limit: 10 }), at(T0, 1)])).rows[0].r.rows;
+  const row = rows.find((r) => r.item_id === LOT_ID);
+  const bid = n(row.high_bid ?? 0);
+  const feeBase = n((await t.db.query("select resale_fee($1) f", [3750])).rows[0].f);
+  assert.ok(Math.abs(n(row.profit_base) - ((3750 - feeBase) - (bid * 1.25 + 40))) < 0.01, "dash_search's inline profit_base must match case_json's formula");
+  if (bid > 0) assert.ok(Math.abs(n(row.roi_base) - n(row.profit_base) / (bid * 1.25 + 40)) < 1e-9, "dash_search's inline roi_base must match too");
+  assert.equal(n(row.max_dealer), Math.floor((n(row.v_dealer) * 0.85 - 40) / 1.25), "dash_search's inline max_dealer must match dealer_case_json's formula");
+  assert.ok(Math.abs(n(row.profit_dealer) - (n(row.v_dealer) - (bid * 1.25 + 40))) < 0.01, "dash_search's inline profit_dealer must match too");
 });
 
 test("dash_search: p.categories matches any of several categories, alongside the single p.category", { skip: skipSale }, async () => {

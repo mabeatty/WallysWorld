@@ -120,9 +120,13 @@ export async function saveBidMath(formData: FormData) {
     const n = Number(String(formData.get(k) ?? "").replace(/[^0-9.]/g, ""));
     return Number.isFinite(n) ? n / 100 : NaN;
   };
+  const dollars = (k: string) => {
+    const n = Number(String(formData.get(k) ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n : NaN;
+  };
   let error = "";
   try {
-    await rpc("dash_set_bid_math", { p_premium: pct("premium"), p_margin: pct("margin") });
+    await rpc("dash_set_bid_math", { p_premium: pct("premium"), p_margin: pct("margin"), p_shipping: dollars("shipping") });
   } catch (e) {
     error = reason(e);
   }

@@ -63,7 +63,7 @@ export type Search = { total: number; limit: number; offset: number; rows: Lot[]
 
 export type CategoryCount = { category: string; open: number; total: number };
 
-export type BidMath = { premium: number; margin: number; dealer: number; tiers: { up_to: number | null; rate: number }[] };
+export type BidMath = { premium: number; margin: number; dealer: number; shipping: number; tiers: { up_to: number | null; rate: number }[] };
 
 export type RefreshStatus = { waiting: number; halted: boolean; paused: boolean; gap_seconds: number };
 
