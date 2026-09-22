@@ -46,13 +46,14 @@ export default async function Followed({ searchParams }: { searchParams: Promise
   const { sort, dir } = readSort(rawSort, get("dir") || (!rawSort && status === "closed" ? "desc" : ""));
   const page = Math.max(1, parseInt(get("page") || "1", 10) || 1);
 
-  // Star a lot anywhere in the app and it shows up here, across every category -- the same
-  // tracked flag also decides which lots get detail and closing-price crawls.
+  // Star a lot anywhere in the app and it shows up here, across every category. Starring also
+  // gives the lot full crawl coverage (the separate tracked flag), but nothing else ever sets
+  // starred, so this list only ever holds what was deliberately starred.
   const [r, openCount, closedCount, allCount, refresh] = await Promise.all([
-    rpc<Search>("dash_search", { p: { q, status, sort, dir, tracked: true, limit: PER_PAGE, offset: (page - 1) * PER_PAGE } }),
-    rpc<Search>("dash_search", { p: { status: "open", tracked: true, limit: 1 } }),
-    rpc<Search>("dash_search", { p: { status: "closed", tracked: true, limit: 1 } }),
-    rpc<Search>("dash_search", { p: { status: "all", tracked: true, limit: 1 } }),
+    rpc<Search>("dash_search", { p: { q, status, sort, dir, starred: true, limit: PER_PAGE, offset: (page - 1) * PER_PAGE } }),
+    rpc<Search>("dash_search", { p: { status: "open", starred: true, limit: 1 } }),
+    rpc<Search>("dash_search", { p: { status: "closed", starred: true, limit: 1 } }),
+    rpc<Search>("dash_search", { p: { status: "all", starred: true, limit: 1 } }),
     rpc<RefreshStatus>("dash_refresh_status"),
   ]);
   const now = Date.now();

@@ -99,12 +99,12 @@ export async function refreshBids(formData: FormData) {
   redirect(u.pathname + u.search + (anchor ? "#" + anchor : ""));
 }
 
-export async function setTracked(formData: FormData) {
+export async function setStarred(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const next = formData.get("next") === "1";
   const returnTo = safePath(String(formData.get("returnTo") ?? "/"));
   try {
-    await rpc("dash_set_tracked", { p_id: id, p_tracked: next });
+    await rpc("dash_set_starred", { p_id: id, p_starred: next });
   } catch {
     /* best effort -- the star just won't have moved */
   }

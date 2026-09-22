@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Lot } from "@/lib/supabase";
 import { headroom, money, overUnder, roiText, signedMoney, timeLeft, when } from "@/lib/format";
 import ValuationCell from "./ValuationCell";
-import { setTracked } from "./actions";
+import { setStarred } from "./actions";
 
 type Case = "worst" | "base" | "best";
 export type ColKey = "name" | "category" | "bid" | "bids" | "bidders" | "source" | "ends" | Case;
@@ -106,14 +106,14 @@ function CaseCells({ c, l, now }: { c: Case; l: Lot; now: number }) {
 
 
 // A star that adds or removes a lot from the Followed list. Submits immediately on click.
-export function TrackToggle({ id, tracked, returnTo }: { id: string; tracked: boolean; returnTo: string }) {
+export function StarToggle({ id, starred, returnTo }: { id: string; starred: boolean; returnTo: string }) {
   return (
-    <form action={setTracked} className="track">
+    <form action={setStarred} className="track">
       <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="next" value={tracked ? "0" : "1"} />
+      <input type="hidden" name="next" value={starred ? "0" : "1"} />
       <input type="hidden" name="returnTo" value={returnTo} />
-      <button type="submit" className={tracked ? "on" : ""} aria-label={tracked ? "Remove from Followed" : "Add to Followed"} title={tracked ? "Remove from Followed" : "Add to Followed"}>
-        {tracked ? "\u2605" : "\u2606"}
+      <button type="submit" className={starred ? "on" : ""} aria-label={starred ? "Remove from Followed" : "Add to Followed"} title={starred ? "Remove from Followed" : "Add to Followed"}>
+        {starred ? "\u2605" : "\u2606"}
       </button>
     </form>
   );
@@ -124,7 +124,7 @@ function Cell({ col, l, now, endsStyle, trackReturnTo }: { col: Exclude<ColKey, 
     case "name":
       return (
         <td className="name">
-          {trackReturnTo ? <TrackToggle id={l.item_id} tracked={!!l.tracked} returnTo={trackReturnTo} /> : null}
+          {trackReturnTo ? <StarToggle id={l.item_id} starred={!!l.starred} returnTo={trackReturnTo} /> : null}
           <Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link>
         </td>
       );

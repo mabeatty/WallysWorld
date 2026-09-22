@@ -24,7 +24,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
   const within = digits(get("within"));
   const minBid = digits(get("min_bid"));
   const maxBid = digits(get("max_bid"));
-  const tracked = get("tracked") === "on";
+  const starred = get("starred") === "on";
   const category = get("category");
   const page = Math.max(1, parseInt(get("page") || "1", 10) || 1);
 
@@ -33,7 +33,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
       p: {
         q, status, sort, dir, estimate, category,
         min_bid: minBid, max_bid: maxBid, within_hours: within,
-        tracked: tracked ? true : undefined,
+        starred: starred ? true : undefined,
         limit: PER_PAGE, offset: (page - 1) * PER_PAGE,
       },
     }),
@@ -49,7 +49,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
     if (within) u.set("within", within);
     if (minBid) u.set("min_bid", minBid);
     if (maxBid) u.set("max_bid", maxBid);
-    if (tracked) u.set("tracked", "on");
+    if (starred) u.set("starred", "on");
     if (category) u.set("category", category);
     u.set("sort", sort); u.set("dir", dir);
     for (const [k, v] of Object.entries(over)) u.set(k, v);
@@ -106,7 +106,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
         </label>
         <input type="hidden" name="sort" value={sort} />
         <input type="hidden" name="dir" value={dir} />
-        <label className="check"><input type="checkbox" name="tracked" defaultChecked={tracked} /> Followed lots only</label>
+        <label className="check"><input type="checkbox" name="starred" defaultChecked={starred} /> Followed lots only</label>
         <div><button type="submit">Apply filters</button></div>
       </form>
 
