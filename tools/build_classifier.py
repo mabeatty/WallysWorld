@@ -9,7 +9,7 @@ R["lab"]     = r"\ylab[- ]?(grown|created|made)\y|\ymoissanite\y"
 R["watch"]   = r"\ywatch(es)?\y|\ywristwatch\y|\ychronograph\y|\y(rolex|omega|patek|breitling|tag heuer|seiko|movado|bulova|longines|tissot|audemars|vacheron|panerai|hublot|swatch)\y"
 R["fob"]     = r"\y(watch )?fobs?\y|\ywatch chains?\y"
 R["realwatch"] = r"\y(pocket|wrist) ?watch(es)?\y"
-R["light"]   = r"\y(lamps?|chandeliers?|sconces?|lanterns?|torchi[eè]res?|lampshades?|prisms?|bobeches|light fixtures?|pendant (light|lamp|fixture))\y|\ylighting\y"
+R["light"]   = r"\y(lamps?|chandeliers?|sconces?|lanterns?|torchi[eè]res?|lampshades?|prisms?|bobeches|light fixtures?|ceiling lights?|wall lights?|pendant (light|lamp|fixture))\y|\ylighting\y"
 R["loose"]   = r"^loose\y"
 R["jew"]     = r"\y(rings?|bracelets?|bangles?|cuffs?|necklaces?|pendants?|earrings?|brooch(es)?|lockets?|chokers?|anklets?|cufflinks?|bolos?|concho|squash blossom|bands?|charms?|lapel pins?|stick pins?|hat pins?|tie (pin|tack|bar|clip))\y|\yjewel(le)?ry\y(?! (box|boxes|case|chest|holder|stand|tray|armoire))"
 R["sw"]      = r"\y(navajo|din[eé]|zuni|hopi|santo domingo|pueblo|southwestern|western|squash blossom|bolo|concho|gaspeite|spiny oyster|magnesite|turquoise|native american)\y"
@@ -19,7 +19,7 @@ R["gold"]    = r"\ygold\y(?![- ](filled|plated|tone))"
 R["art"]     = r"\y(paintings?|watercolou?rs?|gouache|lithographs?|chromolithographs?|serigraphs?|gicl[eé]es?|etchings?|engravings?|woodcuts?|linocuts?|screen ?prints?|silkscreens?|drawings?|pastels?|charcoal|collages?|assemblages?|sculptures?|carvings?|mixed media|oil portrait|photographs?|mezzotint|aquatint|monotype|art print|giclee print|signed print|framed prints?|botanical prints?|prints? by|print of|original art|busts?|halftones?|rotogravures?|woodblocks?|monoprints?|prints|graphic prints?|embellished prints?|digital prints?|oil on (canvas|paper|board|panel|paperboard)|oil landscape|gesso|illustrations?|sgraffito|abstract|floral compositions?|triptychs?|retablos?|acrylic portrait|cartoon|sketch(es)?|studies|hand-colored)\y"
 R["fashion"] = r"\y(handbags?|purses?|totes?|crossbody|clutch(es)?|satchels?|shoulder bags?|messenger|backpacks?|wallets?|luggage|keepall|speedy|neverfull|scarf|scarves|belts?|sunglasses|eyeglasses|hats?|caps?|coats?|jackets?|dress(es)?|blouses?|shirts?|skirts?|pants|sweaters?|robes?|puffers?|sneakers?|shoes?|boots?|loafers?|gloves?|ties?|cloche|bags?|cardigans?|capelets?|capes?|jeans|denim|turtlenecks?|vests?|tunics?|trousers|blazers?|gowns?|shawls?|pumps|heels|sandals|slippers|mules|leggings|fur)\y|\y(louis vuitton|gucci|chanel|herm[eè]s|prada|fendi|burberry|coach|chlo[eé]|dior|c[eé]line|bottega|saint laurent|balenciaga|kate spade|michael kors|tory burch|ferragamo|goyard|mulberry|longchamp|loewe|valentino|dooney|pucci|mcm|stetson|allen edmonds|dolce (&|and) gabbana|stella mccartney|manolo blahnik|jimmy choo|louboutin|banana republic|paige|per se|armani|versace|ralph lauren|brooks brothers)\y"
 R["stamps"]  = r"\y(stamps?|philatelic|airmail|cachets?|postal covers?|first day covers?|postal|stationery|stamped)\y|\yscott c?\d"
-R["coinscur"]= r"\y(coins?|denarius|drachm|tetradrachm|dinar|sestertius|bullion|numismatic|banknotes?|currency|silver dollars?|morgan dollars?|peace dollars?|balboa|proof sets?|mint sets?|penny|pennies|silver eagle|gold eagle|nickels?|dimes?|cents?|tokens?|medals?|half crowns?|florins?|shillings?|sixpence|farthings?|thalers?|sovereigns?)\y"
+R["coinscur"]= r"\y(coins?(?!\s+(silver|banks?))|denarius|drachm|tetradrachm|dinar|sestertius|bullion|numismatic|banknotes?|currency|silver dollars?|morgan dollars?|peace dollars?|balboa|proof sets?|mint sets?|penny|pennies|silver eagle|gold eagle|nickels?|dimes?|cents?|tokens?|medals?|half crowns?|florins?|shillings?|sixpence|farthings?|thalers?|sovereigns?)\y"
 R["books"]   = r"^[\"“][^\"”]+[\"”] by\s|^signed\s+[\"“‘].{1,120}[\"”’]\s+by\s|\y((?<!faux )books?|first editions?|cookbooks?|manuscripts?|atlas|maps?|ephemera|postcards?|posters?|magazines?|newspapers?|documents?|letters?|bibles?|volumes?|encyclopedia|almanac|broadsides?|deeds?|certificates?|catalogs?|catalogues?|poetical works|collected works|folios?)\y"
 R["antiq"]   = r"\y(ancient|antiquit(y|ies)|pre-?columbian|protoclassic|egyptian|roman era|byzantine|etruscan|mesopotamian|sumerian|neolithic|paleolithic|fossils?|meteorites?|megalodon|trilobite|mammoth|artifacts?|mummy|scarab|votive|terracotta|shabti|taxidermy|antlers?|skulls?|geodes?|specimens?|arrowheads?|knapped|projectile points?)\y"
 R["native"]  = r"\y(native american|navajo|din[eé]|hopi|zuni|pueblo|san ildefonso|acoma|santa clara|kachinas?|katsinas?|huichol|alebrijes?|folk art|tribal|indigenous|inuit|first nations|mola|oaxacan|taos|papua new guinea|aboriginal|african|oceanic|maori|beadwork|polynesian|aztec)\y"
@@ -62,10 +62,10 @@ def build():
     lines.append(f"    if karat or n ~ '{q(R['gold'])}' then return 'Jewelry, gold'; end if;")
     lines.append(f"    return 'Jewelry, other';")
     lines.append(f"  end if;")
-    for key, cat in [("art","Art"),("fashion","Handbags and fashion"),("stamps","Stamps"),("coinscur","Coins and currency"),
+    for key, cat in [("art","Art"),("fashion","Handbags and fashion"),("canes","Collectibles and memorabilia"),("stamps","Stamps"),("coinscur","Coins and currency"),
                      ("books","Books, maps and ephemera"),("antiq","Antiquities and natural history"),
                      ("rugs","Rugs and textiles"),("native","Native American, tribal and folk art"),
-                     ("canes","Collectibles and memorabilia"),("ornament","Decorative objects"),("plated","Decorative objects"),("silver","Sterling and silver"),("furn","Furniture"),
+                     ("ornament","Decorative objects"),("plated","Decorative objects"),("silver","Sterling and silver"),("furn","Furniture"),
                      ("ceram","Ceramics and glass"),("asian","Asian art"),
                      ("coll","Collectibles and memorabilia"),("elec","Cameras, music and electronics"),
                      ("tools","Tools, sporting and military"),
