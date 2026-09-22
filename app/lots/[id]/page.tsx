@@ -67,7 +67,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
       {est ? (
         <>
           <p className="note">
-            Valued {dateOnly(est.updated_at)}{est.confidence ? `, ${est.confidence} confidence` : ""}. Worst case is your low estimate, best case your high, and base case the midpoint.
+            Valued {dateOnly(est.updated_at)}{est.confidence ? <>, <span className={`conf ${est.confidence}`} title={`${est.confidence} confidence`} aria-hidden="true" /> {est.confidence} confidence</> : null}. Worst case is your low estimate, best case your high, and base case the midpoint.
           </p>
           <table className="cases">
             <thead><tr><th>Case</th><th className="num">Value</th><th>Headroom</th><th className="num">Max bid</th><th>Over / under</th><th className="num">Profit</th><th>ROI</th></tr></thead>

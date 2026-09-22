@@ -95,7 +95,7 @@ function CaseCells({ c, l, now }: { c: Case; l: Lot; now: number }) {
   const roi = roiText(l[f.roi]);
   return (
     <>
-      <td className="grp">{money(value)}{c === "base" && l.confidence ? <span className="sub">{l.confidence} confidence</span> : null}</td>
+      <td className="grp">{money(value)}{c === "base" && l.confidence ? <span className="sub"><span className={`conf ${l.confidence}`} title={`${l.confidence} confidence`} aria-hidden="true" /> {l.confidence} confidence</span> : null}</td>
       <td>{h ? <span className={h.positive ? "pos" : "neg"}>{h.text}</span> : <span className="neg">-</span>}</td>
       <td>
         {ou ? <span className={`chip ${ou.tone}`}>{ou.label}</span> : <span className="neg">-</span>}
