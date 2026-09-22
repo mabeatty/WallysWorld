@@ -48,7 +48,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <meta httpEquiv="refresh" content="60" />
       <header className="top">
         <h1>EBTH Watch</h1>
-        <nav className="links"><Link href={watchesHref}>Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href={watchesHref}>Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <form method="get" action="/lots" className="search">
@@ -91,6 +91,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <ResultsTable
             rows={ests.rows} now={now.getTime()} sort={es.sort} dir={es.dir} sortHref={estimatesHref}
             cols={["name", "category", "ends", "bid", "source", "worst", "base", "best"]}
+            trackReturnTo={here() + "#estimates"}
           />
         </>
       )}
@@ -105,6 +106,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
           <ResultsTable
             rows={closing.rows} now={now.getTime()} sort={cs.sort} dir={cs.dir} sortHref={closingHref} endsStyle="bar"
             cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "worst", "base", "best"]}
+            trackReturnTo={here() + "#closing"}
           />
         </>
       )}

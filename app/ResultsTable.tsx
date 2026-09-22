@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Lot } from "@/lib/supabase";
 import { headroom, money, overUnder, roiText, signedMoney, timeLeft, when } from "@/lib/format";
 import ValuationCell from "./ValuationCell";
+import { setTracked } from "./actions";
 
 type Case = "worst" | "base" | "best";
 export type ColKey = "name" | "category" | "bid" | "bids" | "bidders" | "source" | "ends" | Case;
@@ -25,8 +26,8 @@ const FIELDS = {
 // One lot table for the whole dashboard. Every column heading sorts; clicking the active one flips the direction.
 // Each case is a cluster of four numbers: its value, the headroom over the current bid, over or under its max bid,
 // and the ROI you would make at the current bid.
-export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, endsStyle = "text" }: {
-  rows: Lot[]; cols: ColKey[]; sort: string; dir: string; sortHref: (key: string) => string; now: number; endsStyle?: "text" | "bar";
+export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, endsStyle = "text", trackReturnTo }: {
+  rows: Lot[]; cols: ColKey[]; sort: string; dir: string; sortHref: (key: string) => string; now: number; endsStyle?: "text" | "bar"; trackReturnTo?: string;
 }) {
   const sortLink = (key: string, label: string) => (
     <Link href={sortHref(key)} className="sortlink">
@@ -69,7 +70,7 @@ export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, end
         <tbody>
           {rows.map((l) => (
             <tr key={l.item_id}>
-              {cols.map((key) => (isCase(key) ? <CaseCells key={key} c={key} l={l} now={now} /> : <Cell key={key} col={key} l={l} now={now} endsStyle={endsStyle} />))}
+              {cols.map((key) => (isCase(key) ? <CaseCells key={key} c={key} l={l} now={now} /> : <Cell key={key} col={key} l={l} now={now} endsStyle={endsStyle} trackReturnTo={trackReturnTo} />))}
             </tr>
           ))}
         </tbody>
@@ -104,10 +105,29 @@ function CaseCells({ c, l, now }: { c: Case; l: Lot; now: number }) {
 }
 
 
-function Cell({ col, l, now, endsStyle }: { col: Exclude<ColKey, Case>; l: Lot; now: number; endsStyle: "text" | "bar" }) {
+// A star that adds or removes a lot from the Followed list. Submits immediately on click.
+export function TrackToggle({ id, tracked, returnTo }: { id: string; tracked: boolean; returnTo: string }) {
+  return (
+    <form action={setTracked} className="track">
+      <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="next" value={tracked ? "0" : "1"} />
+      <input type="hidden" name="returnTo" value={returnTo} />
+      <button type="submit" className={tracked ? "on" : ""} aria-label={tracked ? "Remove from Followed" : "Add to Followed"} title={tracked ? "Remove from Followed" : "Add to Followed"}>
+        {tracked ? "\u2605" : "\u2606"}
+      </button>
+    </form>
+  );
+}
+
+function Cell({ col, l, now, endsStyle, trackReturnTo }: { col: Exclude<ColKey, Case>; l: Lot; now: number; endsStyle: "text" | "bar"; trackReturnTo?: string }) {
   switch (col) {
     case "name":
-      return <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>;
+      return (
+        <td className="name">
+          {trackReturnTo ? <TrackToggle id={l.item_id} tracked={!!l.tracked} returnTo={trackReturnTo} /> : null}
+          <Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link>
+        </td>
+      );
     case "category":
       return <td className="hide-sm">{l.category ?? "-"}</td>;
     case "bid": {

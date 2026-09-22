@@ -4,6 +4,7 @@ import { rpc, type Estimate, type Lot, type RefreshStatus } from "@/lib/supabase
 import { dateOnly, headroom, money, overUnder, roiText, signedMoney, when } from "@/lib/format";
 import { clearEstimate, saveEstimate } from "../../actions";
 import { RefreshButton, RefreshNote } from "../../RefreshControls";
+import { TrackToggle } from "../../ResultsTable";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,8 @@ export default async function LotPage({ params, searchParams }: { params: Promis
   return (
     <>
       <header className="top">
-        <h1>{l.name ?? l.item_id}</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/lots">Find lots</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
+        <h1><TrackToggle id={l.item_id} tracked={!!l.tracked} returnTo={`/lots/${l.item_id}`} />{l.name ?? l.item_id}</h1>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
       </header>
       <p className="note">
         {[r.category, d.sale_name ?? l.sale_name, d.catalog_number].filter(Boolean).join(", ")}

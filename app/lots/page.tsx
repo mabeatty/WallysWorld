@@ -66,7 +66,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
     <>
       <header className="top">
         <h1>Find lots</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <form method="get" action="/lots" className="search">
@@ -123,6 +123,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
           <ResultsTable
             rows={r.rows} now={now} sort={sort} dir={dir} sortHref={sortHref}
             cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "worst", "base", "best"]}
+            trackReturnTo={pageHref(page)}
           />
         </>
       )}

@@ -99,6 +99,24 @@ export async function refreshBids(formData: FormData) {
   redirect(u.pathname + u.search + (anchor ? "#" + anchor : ""));
 }
 
+export async function setTracked(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const next = formData.get("next") === "1";
+  const returnTo = safePath(String(formData.get("returnTo") ?? "/"));
+  try {
+    await rpc("dash_set_tracked", { p_id: id, p_tracked: next });
+  } catch {
+    /* best effort -- the star just won't have moved */
+  }
+  revalidatePath("/");
+  revalidatePath("/lots");
+  revalidatePath("/watches");
+  revalidatePath("/collectibles");
+  revalidatePath("/followed");
+  revalidatePath(`/lots/${id}`);
+  redirect(returnTo);
+}
+
 export async function saveBidMath(formData: FormData) {
   const pct = (k: string) => {
     const n = Number(String(formData.get(k) ?? "").replace(/[^0-9.]/g, ""));
