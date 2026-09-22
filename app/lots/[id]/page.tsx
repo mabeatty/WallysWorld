@@ -35,7 +35,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
     <>
       <header className="top">
         <h1>{l.name ?? l.item_id}</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/coins">Coins &amp; Stamps</Link><Link href="/lots">Find lots</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/lots">Find lots</Link>{l.url && <a href={l.url}>Open on EBTH</a>}</nav>
       </header>
       <p className="note">
         {[r.category, d.sale_name ?? l.sale_name, d.catalog_number].filter(Boolean).join(", ")}

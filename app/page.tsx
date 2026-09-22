@@ -30,8 +30,6 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
   ]);
   const watches = cats.find((c) => c.category === "Watches");
   const watchesHref = "/watches";
-  const coinCats = cats.filter((c) => c.category === "Coins and currency" || c.category === "Stamps");
-  const coinsOpen = coinCats.reduce((s, c) => s + c.open, 0);
   const now = new Date();
   const halt = d.halt;
   const paused = d.paused === true;
@@ -50,7 +48,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       <meta httpEquiv="refresh" content="60" />
       <header className="top">
         <h1>EBTH Watch</h1>
-        <nav className="links"><Link href={watchesHref}>Watches</Link><Link href="/coins">Coins &amp; Stamps</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href={watchesHref}>Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/lots">Find lots</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <form method="get" action="/lots" className="search">
@@ -84,7 +82,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
       </div>
 
       <h2 id="estimates">Your estimates</h2>
-      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}{coinsOpen > 0 ? <>All {coinsOpen} open coins and stamps: <Link href="/coins">see the full list</Link>. </> : null}Worst case is your low estimate, best case your high, base case the midpoint. Dealer is the worst case less the dealer discount on the Setup page, what a dealer might pay outright with no resale fee. ROI is the profit you would make at the current bid, after the resale fee and any buyer&apos;s premium, as a percent of what you pay. Click any heading to sort.</p>
+      <p className="note">Only the {ests.rows.length} open lot{ests.rows.length === 1 ? "" : "s"} you have valued are listed here. {watches ? <>All {watches.open} open watches: <Link href={watchesHref}>see the full list</Link>. </> : null}Worst case is your low estimate, best case your high, base case the midpoint. Dealer is the worst case less the dealer discount on the Setup page, what a dealer might pay outright with no resale fee. ROI is the profit you would make at the current bid, after the resale fee and any buyer&apos;s premium, as a percent of what you pay. Click any heading to sort.</p>
       {ests.rows.length === 0 ? (
         <p className="empty">No estimates yet. Open any lot, or <Link href="/lots">find one</Link>, and add what you think it is worth.</p>
       ) : (
