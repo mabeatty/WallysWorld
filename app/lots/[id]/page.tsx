@@ -72,7 +72,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
           <table className="cases">
             <thead><tr><th>Case</th><th className="num">Value</th><th>Headroom</th><th className="num">Max bid</th><th>Over / under</th><th className="num">Profit</th><th>ROI</th></tr></thead>
             <tbody>
-              {(["worst", "base", "best", "dealer"] as const).map((k) => {
+              {(["worst", "base", "best"] as const).map((k) => {
                 const c = est.cases?.[k];
                 if (!c) return null;
                 const h = headroom(c.value, l.high_bid);
@@ -80,7 +80,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
                 const roi = roiText(c.roi);
                 return (
                   <tr key={k}>
-                    <td>{k === "worst" ? "Worst" : k === "base" ? "Base" : k === "best" ? "Best" : "Dealer"}</td>
+                    <td>{k === "worst" ? "Worst" : k === "base" ? "Base" : "Best"}</td>
                     <td className="num">{money(c.value)}</td>
                     <td>{h ? <span className={h.positive ? "pos" : "neg"}>{h.text}</span> : "-"}</td>
                     <td className="num">{money(c.max)}</td>
@@ -99,7 +99,7 @@ export default async function LotPage({ params, searchParams }: { params: Promis
           ) : null}
           {r.bid_math ? (
             <p className="note" style={{ marginTop: 8 }}>
-              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin{r.bid_math.premium > 0 ? <>, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium</> : null}. Profit and ROI are what you would make if you won at the current bid: the case value less its resale fee, less the bid{r.bid_math.premium > 0 ? " plus the buyer's premium" : ""}, and ROI is that profit as a percent of what you pay. The dealer row is the worst case less the {pct(r.bid_math.dealer)} dealer discount, taken as cash: a dealer pays outright, so no resale fee comes off it, and its max bid is what you could pay and still keep your margin if you had to sell that way. Change the premium, margin and dealer discount on the Setup page.
+              Each max bid is that case&apos;s value, less the resale fee on it, less a {pct(r.bid_math.margin)} margin{r.bid_math.premium > 0 ? <>, divided by {(1 + r.bid_math.premium).toFixed(2)} for the {pct(r.bid_math.premium)} buyer&apos;s premium</> : null}. Profit and ROI are what you would make if you won at the current bid: the case value less its resale fee, less the bid{r.bid_math.premium > 0 ? " plus the buyer's premium" : ""}, and ROI is that profit as a percent of what you pay. Change the premium and margin on the Setup page.
             </p>
           ) : null}
         </>

@@ -4,7 +4,7 @@ import { headroom, money, overUnder, roiText, signedMoney, timeLeft, when } from
 import ValuationCell from "./ValuationCell";
 
 type Case = "worst" | "base" | "best";
-export type ColKey = "name" | "category" | "bid" | "bids" | "bidders" | "source" | "ends" | "dealer" | Case;
+export type ColKey = "name" | "category" | "bid" | "bids" | "bidders" | "source" | "ends" | Case;
 
 const LABELS: Record<string, string> = {
   name: "Lot", category: "Category", bid: "Bid", bids: "Bids", bidders: "Bidders", source: "Source and date", ends: "Time left",
@@ -13,8 +13,8 @@ const CASE_LABEL: Record<Case, string> = { worst: "Worst case", base: "Base case
 const HIDE_SM: ColKey[] = ["category", "bids", "bidders", "source"];
 const NUM: ColKey[] = ["bid", "bids", "bidders"];
 const isCase = (k: ColKey): k is Case => k === "worst" || k === "base" || k === "best";
-// the worst, base and best cases are clusters of four columns; the dealer bid is a cluster of two
-const isGroup = (k: ColKey) => isCase(k) || k === "dealer";
+// the worst, base and best cases are each a cluster of four columns
+const isGroup = (k: ColKey) => isCase(k);
 
 const FIELDS = {
   worst: { v: "v_worst", gap: "gap_worst", max: "max_worst", room: "room_worst", roi: "roi_worst", profit: "profit_worst" },
@@ -24,7 +24,7 @@ const FIELDS = {
 
 // One lot table for the whole dashboard. Every column heading sorts; clicking the active one flips the direction.
 // Each case is a cluster of four numbers: its value, the headroom over the current bid, over or under its max bid,
-// and the ROI you would make at the current bid. The dealer bid is two: what a dealer might pay, and the ROI on that.
+// and the ROI you would make at the current bid.
 export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, endsStyle = "text" }: {
   rows: Lot[]; cols: ColKey[]; sort: string; dir: string; sortHref: (key: string) => string; now: number; endsStyle?: "text" | "bar";
 }) {
@@ -44,8 +44,6 @@ export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, end
             {cols.map((key) =>
               isCase(key) ? (
                 <th key={key} colSpan={4} className="group">{CASE_LABEL[key]}</th>
-              ) : key === "dealer" ? (
-                <th key={key} colSpan={2} className="group">Dealer</th>
               ) : (
                 <th
                   key={key} rowSpan={groups.length ? 2 : 1}
@@ -59,10 +57,7 @@ export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, end
           </tr>
           {groups.length > 0 && (
             <tr>
-              {groups.flatMap((c) => c === "dealer" ? [
-                <th key="dv" className={"grp" + (sort === "dealer" ? " active" : "")} aria-sort={aria("dealer")}>{sortLink("dealer", "Bid")}</th>,
-                <th key="di" className={sort === "dealer_roi" ? "active" : ""} aria-sort={aria("dealer_roi")}>{sortLink("dealer_roi", "ROI")}</th>,
-              ] : [
+              {groups.flatMap((c) => [
                 <th key={c + "v"} className={"grp" + (sort === c ? " active" : "")} aria-sort={aria(c)}>{sortLink(c, "Value")}</th>,
                 <th key={c + "g"} className={sort === c + "_gap" ? "active" : ""} aria-sort={aria(c + "_gap")}>{sortLink(c + "_gap", "Headroom")}</th>,
                 <th key={c + "r"} className={sort === c + "_room" ? "active" : ""} aria-sort={aria(c + "_room")}>{sortLink(c + "_room", "Over / under")}</th>,
@@ -74,7 +69,7 @@ export default function ResultsTable({ rows, cols, sort, dir, sortHref, now, end
         <tbody>
           {rows.map((l) => (
             <tr key={l.item_id}>
-              {cols.map((key) => (isCase(key) ? <CaseCells key={key} c={key} l={l} now={now} /> : key === "dealer" ? <DealerCells key={key} l={l} /> : <Cell key={key} col={key} l={l} now={now} endsStyle={endsStyle} />))}
+              {cols.map((key) => (isCase(key) ? <CaseCells key={key} c={key} l={l} now={now} /> : <Cell key={key} col={key} l={l} now={now} endsStyle={endsStyle} />))}
             </tr>
           ))}
         </tbody>
@@ -108,20 +103,8 @@ function CaseCells({ c, l, now }: { c: Case; l: Lot; now: number }) {
   );
 }
 
-// What a dealer might pay outright, and the ROI you would make at the current bid if you sold to one.
-function DealerCells({ l }: { l: Lot }) {
-  const v = l.v_dealer;
-  if (v == null) return <><td className="grp"><span className="neg">-</span></td><td><span className="neg">-</span></td></>;
-  const roi = roiText(l.roi_dealer);
-  return (
-    <>
-      <td className="grp">{money(v)}</td>
-      <td>{roi ? <><span className={roi.positive ? "pos" : "loss"}>{roi.text}</span><span className="sub">{signedMoney(l.profit_dealer)}</span></> : <span className="neg">-</span>}</td>
-    </>
-  );
-}
 
-function Cell({ col, l, now, endsStyle }: { col: Exclude<ColKey, Case | "dealer">; l: Lot; now: number; endsStyle: "text" | "bar" }) {
+function Cell({ col, l, now, endsStyle }: { col: Exclude<ColKey, Case>; l: Lot; now: number; endsStyle: "text" | "bar" }) {
   switch (col) {
     case "name":
       return <td className="name"><Link href={`/lots/${l.item_id}`}>{l.name ?? l.item_id}</Link></td>;

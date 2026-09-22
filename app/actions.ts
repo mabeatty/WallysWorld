@@ -106,7 +106,7 @@ export async function saveBidMath(formData: FormData) {
   };
   let error = "";
   try {
-    await rpc("dash_set_bid_math", { p_premium: pct("premium"), p_margin: pct("margin"), p_dealer: pct("dealer") });
+    await rpc("dash_set_bid_math", { p_premium: pct("premium"), p_margin: pct("margin") });
   } catch (e) {
     error = reason(e);
   }

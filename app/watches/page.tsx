@@ -100,7 +100,7 @@ export default async function Watches({ searchParams }: { searchParams: Promise<
         {r.total === 0
           ? q ? "No watches match that search." : "No watches here."
           : `Showing ${from}-${to} of ${r.total.toLocaleString("en-US")} ${word}watches${q ? ` matching "${q}"` : ""}.`}
-        {r.total > 0 && " Click a column heading to sort. Lots you have not valued show dashes in the case columns. Dealer is the worst case less the dealer discount, what a dealer might pay outright."}
+        {r.total > 0 && " Click a column heading to sort. Lots you have not valued show dashes in the case columns."}
       </p>
 
       {r.rows.length > 0 && (
@@ -109,7 +109,7 @@ export default async function Watches({ searchParams }: { searchParams: Promise<
           <Pager page={page} pages={pages} href={pageHref} />
           <ResultsTable
             rows={r.rows} now={now} sort={sort} dir={dir} sortHref={sortHref}
-            cols={["name", "ends", "bid", "bids", "bidders", "source", "dealer", "worst", "base", "best"]}
+            cols={["name", "ends", "bid", "bids", "bidders", "source", "worst", "base", "best"]}
           />
           <Pager page={page} pages={pages} href={pageHref} />
         </>

@@ -106,7 +106,7 @@ export default async function Collectibles({ searchParams }: { searchParams: Pro
         {r.total === 0
           ? q ? "Nothing matches that search." : "Nothing here yet."
           : `Showing ${from}-${to} of ${r.total.toLocaleString("en-US")} ${word}${noun}${q ? ` matching "${q}"` : ""}.`}
-        {r.total > 0 && " Click a column heading to sort. Lots you have not valued show dashes in the case columns. Dealer is the worst case less the dealer discount, what a dealer might pay outright."}
+        {r.total > 0 && " Click a column heading to sort. Lots you have not valued show dashes in the case columns."}
       </p>
 
       {r.rows.length > 0 && (
@@ -115,7 +115,7 @@ export default async function Collectibles({ searchParams }: { searchParams: Pro
           <Pager page={page} pages={pages} href={pageHref} />
           <ResultsTable
             rows={r.rows} now={now} sort={sort} dir={dir} sortHref={sortHref}
-            cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "dealer", "worst", "base", "best"]}
+            cols={["name", "category", "ends", "bid", "bids", "bidders", "source", "worst", "base", "best"]}
           />
           <Pager page={page} pages={pages} href={pageHref} />
         </>
