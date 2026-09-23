@@ -75,10 +75,12 @@ async function fresh() {
   await db.exec("create role anon nologin; create role authenticated nologin; create role service_role nologin;");
   await db.exec(MIGRATION);
   const token = (await db.query("select value #>> '{}' t from settings where key='ingest_token'")).rows[0].t;
+  const dash = (await db.query("select value #>> '{}' t from settings where key='dashboard_token'")).rows[0].t;
   return {
-    db, token,
+    db, token, dash,
     ingest: async (p) => (await db.query("select catawiki_ingest_page($1,$2::jsonb) r", [token, JSON.stringify(p)])).rows[0].r,
     one: async (sql, params) => (await db.query(sql, params)).rows[0],
+    set: async (k, v) => db.query("update settings set value=$2::jsonb where key=$1", [k, JSON.stringify(v)]),
   };
 }
 
@@ -121,4 +123,90 @@ test("a list-job ingest carrying seed_name bumps that seed's last_job_at", { ski
   assert.equal((await t.one("select last_job_at from catawiki_seeds where name=$1", ["italian-stamps"])).last_job_at, null);
   await t.ingest({ kind: "list", verdict: "ok", seed_name: "italian-stamps", auction: Catawiki.auctionFromPage(catawikiListDoc()), lots: [] });
   assert.ok((await t.one("select last_job_at from catawiki_seeds where name=$1", ["italian-stamps"])).last_job_at);
+});
+
+test("catawiki_suggested_max_bid and catawiki_case_json: margin, buyer protection fee, and this lot's real shipping all come off, mirroring EBTH's premium/margin/shipping treatment", async () => {
+  const t = await fresh();
+  const n = (x) => Number(x);
+  const max = async (v, ship) => {
+    const m = (await t.db.query("select catawiki_suggested_max_bid($1, $2) m", [v, ship])).rows[0].m;
+    return m == null ? null : Number(m);
+  };
+  // defaults: 9% + EUR3 buyer protection fee, 15% margin
+  assert.equal(await max(1000, 50), Math.floor((1000 * 0.85 - 3 - 50) / 1.09), "(value x 85%) less the EUR3 flat fee and this lot's own shipping, / 1.09");
+  assert.equal(await max(1000, 0), Math.floor((1000 * 0.85 - 3) / 1.09), "no shipping on this particular lot: nothing extra comes off");
+  assert.equal(await max(null, 50), null);
+
+  const cj = async (v, bid, ship) => (await t.db.query("select catawiki_case_json($1, $2, $3) c", [v, bid, ship])).rows[0].c;
+  const c = await cj(1000, 200, 50);
+  assert.equal(n(c.fee), 21, "9% of the EUR200 bid plus the EUR3 flat fee");
+  assert.equal(n(c.shipping), 50, "this lot's own real shipping cost, not an assumption");
+  assert.equal(n(c.max), Math.floor((1000 * 0.85 - 3 - 50) / 1.09));
+  const cost = 200 * 1.09 + 3 + 50;
+  assert.ok(Math.abs(n(c.profit) - (1000 - cost)) < 0.01, "profit nets out the buyer protection fee and shipping, not just the bid");
+  assert.ok(Math.abs(n(c.roi) - (1000 - cost) / cost) < 1e-9);
+  assert.equal((await cj(1000, 0, 50)).roi, null, "no ROI while the bid is EUR0");
+  assert.equal(await cj(null, 100, 50), null, "no value, no case");
+});
+
+test("dash_catawiki_bid_math / dash_set_catawiki_bid_math: margin is settable, the buyer protection fee is not", async () => {
+  const t = await fresh();
+  const n = (x) => Number(x);
+  const bm = (await t.db.query("select dash_catawiki_bid_math($1) r", [t.dash])).rows[0].r;
+  assert.deepEqual([n(bm.margin), n(bm.buyer_protection_pct), n(bm.buyer_protection_flat)], [0.15, 0.09, 3]);
+  await t.db.query("select dash_set_catawiki_bid_math($1, 0.25)", [t.dash]);
+  assert.equal(n((await t.db.query("select dash_catawiki_bid_math($1) r", [t.dash])).rows[0].r.margin), 0.25);
+  await assert.rejects(() => t.db.query("select dash_set_catawiki_bid_math($1, 0.95)", [t.dash]), /margin must be between/);
+  await assert.rejects(() => t.db.query("select dash_set_catawiki_bid_math($1, 0.15)", [t.token]), /invalid token/);
+});
+
+test("dash_catawiki_lot carries worst/base/best cases built from our own estimate and this lot's real shipping, alongside the unchanged Catawiki-estimate gap", { skip }, async () => {
+  const t = await fresh();
+  const lot = Catawiki.parseLotDetail(catawikiLotDoc());
+  const auction = Catawiki.auctionFromPage(catawikiLotDoc());
+  await t.ingest({ kind: "detail", verdict: "ok", auction, lots: [Catawiki.toIngestLot(lot)] });
+  await t.db.query("select dash_catawiki_set_estimate($1,$2,$3,$4,$5,$6,$7,$8)", [t.dash, lot.item_id, 30, 50, null, "medium", "n", null]);
+  const r = (await t.db.query("select dash_catawiki_lot($1, $2) r", [t.dash, lot.item_id])).rows[0].r;
+  const n = (x) => Number(x);
+  assert.equal(n(r.estimate.cases.worst.value), 30);
+  assert.equal(n(r.estimate.cases.best.value), 50);
+  assert.equal(n(r.estimate.cases.base.value), 40);
+  const bid = n(r.lot.high_bid ?? 0), ship = n(r.lot.shipping_eur ?? 0);
+  const cost = bid * 1.09 + 3 + ship;
+  assert.ok(Math.abs(n(r.estimate.cases.worst.profit) - (30 - cost)) < 0.01, "worst-case profit nets out this lot's own shipping and the buyer protection fee");
+  assert.equal(n(r.bid_math.margin), 0.15);
+});
+
+test("dash_catawiki_search: worst/base/best sort and match catawiki_case_json's formula exactly, including its own inline duplicate of profit/roi/max", { skip }, async () => {
+  const t = await fresh();
+  const lot = Catawiki.parseLotDetail(catawikiLotDoc());
+  const auction = Catawiki.auctionFromPage(catawikiLotDoc());
+  await t.ingest({ kind: "detail", verdict: "ok", auction, lots: [Catawiki.toIngestLot(lot)] });
+  await t.db.query("select dash_catawiki_set_estimate($1,$2,$3,$4,$5,$6,$7,$8)", [t.dash, lot.item_id, 30, 50, null, "medium", "n", null]);
+  const search = async (obj) => (await t.db.query("select dash_catawiki_search($1,$2::jsonb) r", [t.dash, JSON.stringify(obj)])).rows[0].r;
+  const rows = (await search({ status: "all", estimate: "with", limit: 10 })).rows;
+  const row = rows.find((r) => r.item_id === lot.item_id);
+  const n = (x) => Number(x);
+  assert.deepEqual([n(row.v_worst), n(row.v_base), n(row.v_best)], [30, 40, 50]);
+
+  const canonical = await t.db.query("select catawiki_case_json($1, $2, $3) c", [row.v_worst, row.high_bid, row.shipping_eur]);
+  const c = canonical.rows[0].c;
+  assert.equal(n(row.max_worst), n(c.max), "dash_search's max_worst must match catawiki_case_json's max exactly");
+  assert.ok(Math.abs(n(row.profit_worst) - n(c.profit)) < 0.01, "dash_search's profit_worst must match catawiki_case_json's profit");
+  if (Number(row.high_bid ?? 0) > 0) {
+    assert.ok(Math.abs(n(row.roi_worst) - n(c.roi)) < 1e-9, "dash_search's roi_worst must match too");
+  } else {
+    assert.equal(row.roi_worst, null, "no ROI while the bid is EUR0");
+  }
+  assert.equal(n(row.gap_worst), 30 - Number(row.high_bid ?? 0));
+
+  // sorting by the new keys
+  const ids = async (sort, dir) => (await search({ status: "all", estimate: "with", limit: 10, sort, dir })).rows.map((r) => r.item_id);
+  for (const key of ["worst", "base", "best", "worst_gap", "base_gap", "best_gap"]) {
+    assert.ok((await ids(key, "desc")).length > 0, `${key} sort returns rows`);
+  }
+
+  // gap_to_catawiki_estimate is completely unaffected by any of this
+  const before = (await search({ status: "all", limit: 10 })).rows.find((r) => r.item_id === lot.item_id);
+  assert.equal(before.gap_to_catawiki_estimate, row.gap_to_catawiki_estimate);
 });

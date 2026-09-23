@@ -1,16 +1,16 @@
 import Link from "next/link";
 import type { CatawikiLot } from "@/lib/supabase";
-import { moneyEUR, signedMoney, timeLeft, when } from "@/lib/format";
+import { moneyEUR, roiText, signedMoney, timeLeft, when } from "@/lib/format";
 import { setCatawikiStarred } from "./actions";
 
-export type ColKey = "name" | "category" | "ends" | "bid" | "fee" | "catawiki_estimate" | "gap" | "our_estimate";
+export type ColKey = "name" | "category" | "ends" | "bid" | "fee" | "our_estimate" | "our_gap" | "catawiki_estimate" | "gap";
 
 const LABELS: Record<ColKey, string> = {
   name: "Lot", category: "Category", ends: "Time left", bid: "Bid", fee: "Buyer fee",
-  catawiki_estimate: "Catawiki estimate", gap: "Gap after fees", our_estimate: "Our estimate",
+  our_estimate: "Our estimate", our_gap: "Our gap (worst case)", catawiki_estimate: "Catawiki estimate", gap: "Catawiki's gap",
 };
 const HIDE_SM: ColKey[] = ["category", "fee", "catawiki_estimate"];
-const NUM: ColKey[] = ["bid", "fee", "catawiki_estimate", "gap", "our_estimate"];
+const NUM: ColKey[] = ["bid", "fee", "our_estimate", "our_gap", "catawiki_estimate", "gap"];
 
 // A star that adds or removes a lot from Followed. Submits immediately, no page reload (the action
 // itself doesn't redirect, so Next.js patches the row in place).
@@ -31,7 +31,7 @@ export default function CatawikiTable({ rows, cols, sort, dir, sortHref, now }: 
 }) {
   const sortable: Record<ColKey, string | null> = {
     name: "name", category: "category", ends: "ends", bid: "bid", fee: null,
-    catawiki_estimate: "estimate_low", gap: "gap", our_estimate: null,
+    our_estimate: null, our_gap: "worst_gap", catawiki_estimate: "estimate_low", gap: "gap",
   };
   const sortLink = (key: string, label: string) => (
     <Link href={sortHref(key)} className="sortlink">
@@ -107,5 +107,16 @@ function Cell({ col, l, now }: { col: ColKey; l: CatawikiLot; now: number }) {
           {l.confidence ? <span className="sub"><span className={`conf ${l.confidence}`} title={`${l.confidence} confidence`} aria-hidden="true" /> {l.confidence}</span> : null}
         </td>
       );
+    case "our_gap": {
+      const g = l.gap_worst;
+      if (g == null) return <td className="num"><span className="neg">-</span></td>;
+      const roi = roiText(l.roi_worst);
+      return (
+        <td className="num">
+          <span className={g >= 0 ? "pos" : "neg"}>{signedMoney(g).replace("$", "\u20ac")}</span>
+          {roi ? <span className="sub"><span className={roi.positive ? "pos" : "loss"}>{roi.text}</span> ROI</span> : null}
+        </td>
+      );
+    }
   }
 }

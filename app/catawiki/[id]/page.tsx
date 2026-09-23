@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { rpc, type CatawikiLotDetail } from "@/lib/supabase";
-import { dateOnly, moneyEUR, when } from "@/lib/format";
+import { dateOnly, moneyEUR, roiText, signedMoney, when } from "@/lib/format";
 import { clearCatawikiEstimate, setCatawikiEstimate } from "../actions";
 import { StarToggle } from "../CatawikiTable";
 
@@ -49,10 +49,43 @@ export default async function CatawikiLotPage({ params, searchParams }: { params
       <h2 id="estimate">Our own estimate</h2>
       <p className="note">Separate from Catawiki&apos;s published estimate above -- use this for your own research when you want a second, independent number.</p>
       {est && (
-        <p className="note">
-          Valued {dateOnly(est.updated_at)}{est.confidence ? <>, <span className={`conf ${est.confidence}`} title={`${est.confidence} confidence`} aria-hidden="true" /> {est.confidence} confidence</> : null}.
-          Range: <b>{moneyEUR(est.est_low)} to {moneyEUR(est.est_high)}</b>{est.max_bid != null && <>, your own max bid <b>{moneyEUR(est.max_bid)}</b></>}.
-        </p>
+        <>
+          <p className="note">
+            Valued {dateOnly(est.updated_at)}{est.confidence ? <>, <span className={`conf ${est.confidence}`} title={`${est.confidence} confidence`} aria-hidden="true" /> {est.confidence} confidence</> : null}.
+            Range: <b>{moneyEUR(est.est_low)} to {moneyEUR(est.est_high)}</b>{est.max_bid != null && <>, your own max bid <b>{moneyEUR(est.max_bid)}</b></>}.
+          </p>
+          {est.cases && (
+            <>
+              <table className="cases">
+                <thead><tr><th>Case</th><th className="num">Value</th><th className="num">Max bid</th><th className="num">Profit</th><th>ROI</th></tr></thead>
+                <tbody>
+                  {(["worst", "base", "best"] as const).map((k) => {
+                    const c = est.cases?.[k];
+                    if (!c) return null;
+                    const roi = roiText(c.roi);
+                    return (
+                      <tr key={k}>
+                        <td>{k === "worst" ? "Worst" : k === "base" ? "Base" : "Best"}</td>
+                        <td className="num">{moneyEUR(c.value)}</td>
+                        <td className="num">{moneyEUR(c.max)}</td>
+                        <td className="num">{roi ? signedMoney(c.profit).replace("$", "\u20ac") : "-"}</td>
+                        <td>{roi ? <span className={roi.positive ? "pos" : "loss"}>{roi.text}</span> : <span className="neg">-</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {r.bid_math && (
+                <p className="note" style={{ marginTop: 8 }}>
+                  Max bid is that case&apos;s value, less a {Math.round(r.bid_math.margin * 1000) / 10}% margin, less Catawiki&apos;s real buyer
+                  protection fee ({Math.round(r.bid_math.buyer_protection_pct * 1000) / 10}% + {moneyEUR(r.bid_math.buyer_protection_flat)}) and
+                  this lot&apos;s own shipping cost, divided by one plus the fee percentage. Profit and ROI are what you&apos;d make winning at the
+                  current bid: the case value less the bid plus fee plus shipping. Change the margin on the Setup page.
+                </p>
+              )}
+            </>
+          )}
+        </>
       )}
       <form action={setCatawikiEstimate} className="estimate">
         <input type="hidden" name="id" value={l.item_id} />

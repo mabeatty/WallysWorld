@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { rpc, publicKeys, type BidMath, type CatawikiSetupData } from "@/lib/supabase";
+import { rpc, publicKeys, type BidMath, type CatawikiSetupData, type CatawikiBidMath } from "@/lib/supabase";
 import { addSeed, removeSeed, saveBidMath } from "../actions";
-import { addCatawikiSeed, removeCatawikiSeed } from "../catawiki/actions";
-import { money } from "@/lib/format";
+import { addCatawikiSeed, removeCatawikiSeed, saveCatawikiBidMath } from "../catawiki/actions";
+import { money, moneyEUR } from "@/lib/format";
 import CopyBox from "../CopyBox";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,11 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
   const sp = await searchParams;
   const flag = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
   const { url, anonKey } = publicKeys();
-  const [setup, math, catawikiSetup] = await Promise.all([
+  const [setup, math, catawikiSetup, catawikiMath] = await Promise.all([
     rpc<{ ingest_token: string; seeds: Seed[] }>("dash_setup"),
     rpc<BidMath>("dash_bid_math"),
     rpc<CatawikiSetupData>("dash_catawiki_setup"),
+    rpc<CatawikiBidMath>("dash_catawiki_bid_math"),
   ]);
   const pct = (n: number) => String(Math.round(n * 1000) / 10);
   const tiers = math.tiers.map((t, i) => {
@@ -45,6 +46,22 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
         <button type="submit">Save</button>
       </form>
       <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, the shipping cost to <em>your</em> buyer when you resell, and sales tax. Assumed shipping, above, is the other direction: what EBTH charges <em>you</em> to receive the lot. EBTH&apos;s real per-lot shipping cost is a live quote based on your ZIP code, not a number on the page, so the collector can&apos;t read it per lot yet -- this flat number stands in for it and comes off every case&apos;s max bid, profit, and ROI the same way a buyer&apos;s premium would.</p>
+
+      <h2 id="catawikibidmath">Catawiki bid math</h2>
+      <p className="note">
+        The same worst/base/best case math as above, built from <em>your own</em> estimate on each lot, not Catawiki&apos;s published one --
+        Catawiki has a revenue interest in a higher hammer price, so its own estimate is shown separately as a reference, not used here.
+        Catawiki has no resale step, so a case&apos;s value is treated as all-in worth: max bid is that value less this margin, less Catawiki&apos;s
+        real buyer protection fee ({pct(catawikiMath.buyer_protection_pct)}% + {moneyEUR(catawikiMath.buyer_protection_flat)}) and this lot&apos;s
+        own real shipping cost, divided by one plus the fee percentage. Profit and ROI net out the same fee and shipping against the current bid.
+        The buyer protection fee is Catawiki&apos;s real published rate, not an assumption, so only the margin is editable here.
+      </p>
+      {flag("csaved") && <div className="saved" role="status">Saved. Calculated max bids now use this margin.</div>}
+      {flag("cerror") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("cerror")}</p></div>}
+      <form action={saveCatawikiBidMath} className="bidmath">
+        <label>Margin to keep, %<input type="text" inputMode="decimal" name="margin" defaultValue={pct(catawikiMath.margin)} /></label>
+        <button type="submit">Save</button>
+      </form>
 
       <h2>Connect the Chrome extension</h2>
       <ol className="steps">

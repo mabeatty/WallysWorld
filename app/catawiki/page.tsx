@@ -15,9 +15,10 @@ export default async function Catawiki({ searchParams }: { searchParams: Promise
   const q = get("q").trim();
   const status = ["open", "closed", "all"].includes(get("status")) ? get("status") : "open";
   const rawSort = get("sort");
-  // gap and estimate first, since Catawiki's own published estimate is the whole point of this platform
-  const sortKey = ["ends", "bid", "name", "category", "estimate_low", "gap"].includes(rawSort) ? rawSort : "gap";
-  const dir = get("dir") === "asc" || get("dir") === "desc" ? get("dir") : (sortKey === "gap" ? "desc" : nextDir(sortKey, "", sortKey));
+  // Our own worst-case gap is the default signal now, not Catawiki's own published estimate --
+  // see /areas/catawiki-stamps.md: Catawiki has a revenue interest in a higher hammer price.
+  const sortKey = ["ends", "bid", "name", "category", "estimate_low", "gap", "worst", "worst_gap", "worst_roi", "base", "base_gap", "base_roi", "best", "best_gap", "best_roi"].includes(rawSort) ? rawSort : "worst_gap";
+  const dir = get("dir") === "asc" || get("dir") === "desc" ? get("dir") : (["gap", "worst_gap", "base_gap", "best_gap", "worst_roi", "base_roi", "best_roi"].includes(sortKey) ? "desc" : nextDir(sortKey, "", sortKey));
   const category = get("category");
   const estimate = ["any", "with", "without"].includes(get("estimate")) ? get("estimate") : "any";
   const starred = get("starred") === "on";
@@ -57,8 +58,10 @@ export default async function Catawiki({ searchParams }: { searchParams: Promise
 
       <p className="note">
         Bid and estimate figures are in euros. Buyer fee is Catawiki&apos;s 9% + &euro;3 buyer protection fee on the hammer price.
-        Gap after fees is Catawiki&apos;s own published low estimate minus what you&apos;d actually pay (bid, with the fee added) --
-        a positive number means the lot is bid below what Catawiki&apos;s own expert says it&apos;s worth. Our estimate, when set, is separate from Catawiki&apos;s.
+        &ldquo;Our gap&rdquo; is worst case (your low estimate) minus what you&apos;d actually pay -- bid, fee, and this lot&apos;s real
+        shipping cost, plus a margin -- so a positive number is a real bargain by your own judgment, not Catawiki&apos;s. Catawiki&apos;s own
+        published estimate and its gap are shown too, for reference only: Catawiki has a revenue interest in a higher hammer price, so
+        treat its estimate skeptically rather than as ground truth.
       </p>
 
       <form method="get" action="/catawiki" className="search">
@@ -93,14 +96,14 @@ export default async function Catawiki({ searchParams }: { searchParams: Promise
 
       <p className="note" style={{ marginTop: 18 }}>
         {r.total === 0 ? "No lots match." : `Showing ${from}-${to} of ${r.total.toLocaleString("en-US")} lots.`}
-        {r.total > 0 && " Click a column heading to sort. Sorted by gap by default -- the biggest apparent bargains first."}
+        {r.total > 0 && " Click a column heading to sort. Sorted by our own worst-case gap by default -- the biggest bargains by your own estimate first."}
       </p>
 
       {r.rows.length > 0 && (
         <>
           <CatawikiTable
-            rows={r.rows} now={now} sort={sortKey === "gap" ? "gap" : sortKey === "estimate_low" ? "estimate_low" : sortKey} dir={dir} sortHref={sortHref}
-            cols={["name", "category", "ends", "bid", "fee", "catawiki_estimate", "gap", "our_estimate"]}
+            rows={r.rows} now={now} sort={sortKey} dir={dir} sortHref={sortHref}
+            cols={["name", "category", "ends", "bid", "fee", "our_estimate", "our_gap", "catawiki_estimate", "gap"]}
           />
           {r.total > PER_PAGE && (
             <div className="pager">

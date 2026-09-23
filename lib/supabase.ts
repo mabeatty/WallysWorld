@@ -71,6 +71,9 @@ export type RefreshStatus = { waiting: number; halted: boolean; paused: boolean;
 // protection fee, not EBTH's tiered resale fee), and Catawiki publishes its own expert estimate on
 // every lot -- gap_to_catawiki_estimate is that estimate's low end minus what you'd actually pay
 // (bid, with the buyer protection fee added), the core arbitrage signal for this platform.
+export type CatawikiCase = { value: number; fee: number; shipping: number; max: number | null; profit: number; roi: number | null };
+export type CatawikiBidMath = { margin: number; buyer_protection_pct: number; buyer_protection_flat: number };
+
 export type CatawikiLot = {
   item_id: string; name: string; url: string; category: string | null;
   ends_at: string | null; high_bid: number | null; is_starting_bid: boolean;
@@ -85,6 +88,14 @@ export type CatawikiLot = {
   starred: boolean; tracked: boolean; first_seen: string; snapshot_ts: string | null;
   est_low?: number | null; est_high?: number | null; max_bid?: number | null;
   confidence?: string | null; est_notes?: string | null; est_sources?: string | null; est_updated?: string | null;
+  // worst/base/best, built from OUR OWN estimate (est_low/est_high), not Catawiki's -- present once
+  // an estimate is set. gap_* is simple headroom (value less bid); profit_*/roi_* net out the
+  // buyer protection fee and this lot's own real shipping cost, the way catawiki_case_json does.
+  v_worst?: number | null; v_base?: number | null; v_best?: number | null;
+  max_worst?: number | null; max_base?: number | null; max_best?: number | null;
+  gap_worst?: number | null; gap_base?: number | null; gap_best?: number | null;
+  profit_worst?: number | null; profit_base?: number | null; profit_best?: number | null;
+  roi_worst?: number | null; roi_base?: number | null; roi_best?: number | null;
 };
 
 export type CatawikiSearch = { total: number; limit: number; offset: number; rows: CatawikiLot[] };
@@ -92,9 +103,11 @@ export type CatawikiCategoryCount = { category: string; open: number; total: num
 export type CatawikiEstimate = {
   est_low: number | null; est_high: number | null; max_bid: number | null;
   confidence: string | null; notes: string | null; sources: string | null; updated_at: string;
+  // present via dash_catawiki_lot only, mirroring EBTH's per-lot cases
+  cases?: { worst: CatawikiCase | null; base: CatawikiCase | null; best: CatawikiCase | null };
 };
 export type CatawikiSnapshot = { id: number; ts: string; high_bid: number | null; watchers_count: number | null; bids_count: number | null };
-export type CatawikiLotDetail = { lot: CatawikiLot | null; estimate: CatawikiEstimate | null; snapshots: CatawikiSnapshot[] };
+export type CatawikiLotDetail = { lot: CatawikiLot | null; estimate: CatawikiEstimate | null; bid_math: CatawikiBidMath | null; snapshots: CatawikiSnapshot[] };
 
 export type CatawikiSeed = { name: string; url: string; kind: "auction" | "category"; enabled: boolean; last_job_at: string | null };
 export type CatawikiFetch = { id: number; ts: string; source: string; kind: string | null; url: string | null; verdict: string; note: string | null; n_items: number };

@@ -75,3 +75,19 @@ export async function removeCatawikiSeed(formData: FormData) {
   await rpc("dash_remove_catawiki_seed", { p_name: String(formData.get("name") ?? "") });
   revalidatePath("/setup");
 }
+
+export async function saveCatawikiBidMath(formData: FormData) {
+  const pct = (k: string) => {
+    const n = Number(String(formData.get(k) ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n / 100 : NaN;
+  };
+  let error = "";
+  try {
+    await rpc("dash_set_catawiki_bid_math", { p_margin: pct("margin") });
+  } catch (e) {
+    error = reason(e);
+  }
+  revalidatePath("/catawiki");
+  revalidatePath("/setup");
+  redirect("/setup?" + (error ? "cerror=" + encodeURIComponent(error) : "csaved=1") + "#catawikibidmath");
+}
