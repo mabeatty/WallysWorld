@@ -79,6 +79,7 @@ async function fresh() {
   return {
     db, token, dash,
     ingest: async (p) => (await db.query("select catawiki_ingest_page($1,$2::jsonb) r", [token, JSON.stringify(p)])).rows[0].r,
+    next_job: async (now) => (await db.query("select catawiki_next_job($1,$2::timestamptz) j", [token, now || new Date().toISOString()])).rows[0].j,
     one: async (sql, params) => (await db.query(sql, params)).rows[0],
     set: async (k, v) => db.query("update settings set value=$2::jsonb where key=$1", [k, JSON.stringify(v)]),
   };
@@ -209,4 +210,23 @@ test("dash_catawiki_search: worst/base/best sort and match catawiki_case_json's 
   // gap_to_catawiki_estimate is completely unaffected by any of this
   const before = (await search({ status: "all", limit: 10 })).rows.find((r) => r.item_id === lot.item_id);
   assert.equal(before.gap_to_catawiki_estimate, row.gap_to_catawiki_estimate);
+});
+
+test("a lot discovered via a list job (which never carries its own ends_at) falls back to its auction's ends_at, and so becomes eligible for a detail job (regression for the 0028 bug)", async () => {
+  const t = await fresh();
+  const auctionEndsAt = "2026-09-26T18:00:00Z";
+  const auction = { id: "1254400", name: "Exclusive International Stamps Auction", url: "https://www.catawiki.com/en/a/1254400", category: "Stamps", curator: "Someone", ends_at: auctionEndsAt };
+  // exactly what parseAuctionList's lots ever look like: no ends_at field at all.
+  const listItem = { item_id: "999001", name: "Test lot", url: "https://www.catawiki.com/en/l/999001", condition: "Used", auction_id: "1254400" };
+  assert.ok(!("ends_at" in listItem));
+  await t.ingest({ kind: "list", verdict: "ok", auction, lots: [listItem] });
+
+  const row = await t.one("select ends_at from catawiki_lots where item_id=$1", ["999001"]);
+  assert.equal(new Date(row.ends_at).toISOString(), new Date(auctionEndsAt).toISOString(), "the lot's ends_at falls back to its auction's");
+
+  // before the fix, this lot's NULL ends_at made it permanently ineligible here, since the query
+  // requires ends_at > now() -- the crawler would loop on list jobs forever and never detail anything.
+  const job = await t.next_job(new Date(Date.parse(auctionEndsAt) - 24 * 3600 * 1000).toISOString());
+  assert.equal(job.kind, "detail");
+  assert.equal(job.item_id, "999001");
 });
