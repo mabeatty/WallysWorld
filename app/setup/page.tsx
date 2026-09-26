@@ -2,6 +2,7 @@ import Link from "next/link";
 import { rpc, publicKeys, type BidMath, type CatawikiSetupData, type CatawikiBidMath } from "@/lib/supabase";
 import { addSeed, removeSeed, saveBidMath } from "../actions";
 import { addCatawikiSeed, removeCatawikiSeed, saveCatawikiBidMath } from "../catawiki/actions";
+import { saveFxRate } from "../all/actions";
 import { money, moneyEUR } from "@/lib/format";
 import CopyBox from "../CopyBox";
 
@@ -13,11 +14,12 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
   const sp = await searchParams;
   const flag = (k: string) => { const v = sp[k]; return (Array.isArray(v) ? v[0] : v) ?? ""; };
   const { url, anonKey } = publicKeys();
-  const [setup, math, catawikiSetup, catawikiMath] = await Promise.all([
+  const [setup, math, catawikiSetup, catawikiMath, fxRate] = await Promise.all([
     rpc<{ ingest_token: string; seeds: Seed[] }>("dash_setup"),
     rpc<BidMath>("dash_bid_math"),
     rpc<CatawikiSetupData>("dash_catawiki_setup"),
     rpc<CatawikiBidMath>("dash_catawiki_bid_math"),
+    rpc<number>("dash_fx_rate"),
   ]);
   const pct = (n: number) => String(Math.round(n * 1000) / 10);
   const tiers = math.tiers.map((t, i) => {
@@ -32,7 +34,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
     <>
       <header className="top">
         <h1>Setup</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link><Link href="/catawiki">Catawiki</Link></nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/all">All items</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/lots">Find lots</Link><Link href="/catawiki">Catawiki</Link></nav>
       </header>
 
       <h2 id="bidmath">Bid math</h2>
@@ -60,6 +62,18 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       {flag("cerror") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("cerror")}</p></div>}
       <form action={saveCatawikiBidMath} className="bidmath">
         <label>Margin to keep, %<input type="text" inputMode="decimal" name="margin" defaultValue={pct(catawikiMath.margin)} /></label>
+        <button type="submit">Save</button>
+      </form>
+
+      <h2 id="fxrate">EUR/USD rate</h2>
+      <p className="note">
+        The rate the All items page uses to convert Catawiki&apos;s euro figures to dollars, so the two platforms can be compared and sorted by ROI on one list.
+        This is a manually set assumption, not a live feed &mdash; there is no exchange-rate API wired up, so update it here when it has drifted meaningfully from the real rate.
+      </p>
+      {flag("xsaved") && <div className="saved" role="status">Saved. The All items page now converts euros at this rate.</div>}
+      {flag("xerror") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("xerror")}</p></div>}
+      <form action={saveFxRate} className="bidmath">
+        <label>1 EUR = $<input type="text" inputMode="decimal" name="rate" defaultValue={String(fxRate)} /></label>
         <button type="submit">Save</button>
       </form>
 

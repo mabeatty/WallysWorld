@@ -63,6 +63,27 @@ export type Search = { total: number; limit: number; offset: number; rows: Lot[]
 
 export type CategoryCount = { category: string; open: number; total: number };
 
+// The combined cross-platform view: one row shape for both EBTH (USD-native) and Catawiki
+// (EUR-native) lots. bid_usd/v_*_usd/profit_*_usd are always in USD (converted from the native
+// currency for Catawiki rows using the fx_rate the search returned); bid_native/currency show
+// what the lot is actually denominated in. roi_worst/base/best need no conversion -- a ratio is
+// currency-free -- which is why they're the intended sort key for a mixed-currency list.
+export type CombinedRow = {
+  source: "ebth" | "catawiki";
+  item_id: string; name: string | null; url: string | null; category: string | null;
+  currency: "USD" | "EUR"; bid_native: number | null; bid_usd: number | null;
+  ends_at: string | null; bids_count: number | null;
+  est_low?: number | null; est_high?: number | null; confidence?: string | null;
+  v_worst?: number | null; v_base?: number | null; v_best?: number | null;
+  v_worst_usd?: number | null; v_base_usd?: number | null; v_best_usd?: number | null;
+  max_worst?: number | null; max_base?: number | null; max_best?: number | null;
+  profit_worst_usd?: number | null; profit_base_usd?: number | null; profit_best_usd?: number | null;
+  roi_worst?: number | null; roi_base?: number | null; roi_best?: number | null;
+  starred?: boolean;
+};
+
+export type CombinedSearch = { total: number; limit: number; offset: number; fx_rate: number; rows: CombinedRow[] };
+
 export type BidMath = { premium: number; margin: number; dealer: number; shipping: number; tiers: { up_to: number | null; rate: number }[] };
 
 export type RefreshStatus = { waiting: number; halted: boolean; paused: boolean; gap_seconds: number };

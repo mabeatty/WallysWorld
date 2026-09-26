@@ -66,7 +66,7 @@ export default async function FindLots({ searchParams }: { searchParams: Promise
     <>
       <header className="top">
         <h1>Find lots</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/catawiki">Catawiki</Link><Link href="/setup">Setup</Link></nav>
+        <nav className="links"><Link href="/">Dashboard</Link><Link href="/all">All items</Link><Link href="/watches">Watches</Link><Link href="/collectibles">Collectibles</Link><Link href="/followed">Followed</Link><Link href="/catawiki">Catawiki</Link><Link href="/setup">Setup</Link></nav>
       </header>
 
       <form method="get" action="/lots" className="search">
