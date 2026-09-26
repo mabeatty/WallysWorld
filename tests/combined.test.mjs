@@ -12,6 +12,8 @@ async function fresh() {
   await set("min_gap_seconds", 0);
   await set("quiet_hours", null);
   await set("assumed_shipping", 0); // EBTH cost math stays simple for these tests
+  await set("sales_tax_rate", 0);
+  await set("bulky_shipping", 0);
 
   let seq = 1;
   const addEbth = async ({ item_id, name, category, high_bid = 0, ends_at = "2099-01-01T00:00:00Z", bids_count = 0 }) => {
@@ -171,6 +173,29 @@ test("dash_combined_search's starred filter returns only lots marked as followed
   // without the filter, everything (followed or not, either platform) still comes back
   const all = await t.search({ status: "all", limit: 10 });
   assert.equal(all.rows.length, 4);
+});
+
+test("dash_combined_search's EBTH-side profit/roi use each lot's own category for bulky-item shipping, not one flat number for everything", async () => {
+  const t = await fresh();
+  await t.set("bulky_shipping", 200);
+  await t.set("sales_tax_rate", 0); // isolate the shipping-by-category effect from tax in this check
+
+  const furniture = await t.addEbth({ name: "A large armoire", category: "Furniture", high_bid: 3300 });
+  await t.setEbthEstimate(furniture, 3000, 4500);
+  const watch = await t.addEbth({ name: "A wristwatch", category: "Watches", high_bid: 3300 });
+  await t.setEbthEstimate(watch, 3000, 4500);
+
+  const r = await t.search({ status: "all", limit: 10 });
+  const furnitureRow = r.rows.find((row) => row.item_id === furniture);
+  const watchRow = r.rows.find((row) => row.item_id === watch);
+  assert.ok(furnitureRow && watchRow);
+
+  // same value, same bid, same everything except category -- Furniture (bulky) must show lower
+  // profit than Watches (not bulky), because it's carrying the higher assumed shipping cost
+  assert.ok(Number(furnitureRow.profit_base_usd) < Number(watchRow.profit_base_usd),
+    "the bulky-category lot's profit reflects the higher bulky shipping figure, not the flat default");
+  assert.equal(Number(watchRow.profit_base_usd) - Number(furnitureRow.profit_base_usd), 200 - 0,
+    "the exact gap between the two profits is bulky_shipping minus this file's zeroed flat assumed_shipping baseline");
 });
 
 test("dash_combined_search's min_roi filter narrows the list independently of sort -- sorting by time left still only returns lots clearing the ROI floor", async () => {

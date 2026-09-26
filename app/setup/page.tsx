@@ -27,6 +27,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
     const rate = `${Math.round(t.rate * 1000) / 10}%`;
     return t.up_to == null ? `${rate} above ${money(lo)}` : i === 0 ? `${rate} up to ${money(t.up_to)}` : `${rate} from ${money(lo)} to ${money(t.up_to)}`;
   }).join(", ");
+  const bulkyCats = math.bulky_categories.join(", ");
   const code = JSON.stringify({ url, anonKey, token: setup.ingest_token });
   const missing = !url || !anonKey;
 
@@ -38,16 +39,18 @@ export default async function Setup({ searchParams }: { searchParams: Promise<Re
       </header>
 
       <h2 id="bidmath">Bid math</h2>
-      <p className="note">Each lot&apos;s calculated max bid is the most you can pay at the hammer and still keep your margin, worked out separately for the worst, base and best case: that case&apos;s value, less the resale fee, less your margin, divided by one plus the buyer&apos;s premium.</p>
+      <p className="note">Each lot&apos;s calculated max bid is the most you can pay at the hammer and still keep your margin, worked out separately for the worst, base and best case: that case&apos;s value, less the resale fee, less your margin, divided by one plus the buyer&apos;s premium and one plus the sales tax rate.</p>
       {flag("saved") && <div className="saved" role="status">Saved. Calculated max bids now use these numbers.</div>}
       {flag("error") && <div className="banner" role="alert"><strong>Not saved</strong><p>{flag("error")}</p></div>}
       <form action={saveBidMath} className="bidmath">
         <label>Buyer&apos;s premium, %<input type="text" inputMode="decimal" name="premium" defaultValue={pct(math.premium)} /></label>
         <label>Margin to keep, %<input type="text" inputMode="decimal" name="margin" defaultValue={pct(math.margin)} /></label>
+        <label>Sales tax rate, %<input type="text" inputMode="decimal" name="tax" defaultValue={pct(math.tax)} /></label>
         <label>Assumed shipping, $<input type="text" inputMode="decimal" name="shipping" defaultValue={String(math.shipping)} /></label>
+        <label>Bulky-item shipping, $<input type="text" inputMode="decimal" name="bulky_shipping" defaultValue={String(math.bulky_shipping)} /></label>
         <button type="submit">Save</button>
       </form>
-      <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee, the shipping cost to <em>your</em> buyer when you resell, and sales tax. Assumed shipping, above, is the other direction: what EBTH charges <em>you</em> to receive the lot. EBTH&apos;s real per-lot shipping cost is a live quote based on your ZIP code, not a number on the page, so the collector can&apos;t read it per lot yet -- this flat number stands in for it and comes off every case&apos;s max bid, profit, and ROI the same way a buyer&apos;s premium would.</p>
+      <p className="note">EBTH does not charge buyers a premium (per EBTH&apos;s terms), so this is set to 0%. Change it only if that changes, or to model another auction site. Resale fee, applied in tiers: {tiers}. That is eBay&apos;s watch schedule for non-store sellers as announced in 2022, not confirmed for 2026. It leaves out the per-order fee and the shipping cost to <em>your</em> buyer when you resell. Sales tax, above, is a manual assumption too -- there is no way for this system to know your actual state and local rate, so update it to your real combined rate rather than trusting the default. Assumed shipping is what EBTH charges <em>you</em> to receive an ordinary lot; EBTH&apos;s real per-lot shipping cost is a live quote based on your ZIP code, not a number on the page, so this flat figure stands in for it. Bulky-item shipping is a separate, higher figure used instead of the flat one for categories where real freight typically costs much more: {bulkyCats}. All of these come off every case&apos;s max bid, profit, and ROI the same way a buyer&apos;s premium would.</p>
 
       <h2 id="catawikibidmath">Catawiki bid math</h2>
       <p className="note">

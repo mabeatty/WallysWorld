@@ -15,7 +15,7 @@ async function fresh(settings = {}) {
   await db.exec(MIGRATION);
   const token = (await db.query("select value #>> '{}' t from settings where key='ingest_token'")).rows[0].t;
   const set = async (k, v) => db.query("update settings set value=$2::jsonb where key=$1", [k, JSON.stringify(v)]);
-  await set("min_gap_seconds", 0); await set("timezone", "UTC"); await set("quiet_hours", null); await set("assumed_shipping", 0);
+  await set("min_gap_seconds", 0); await set("timezone", "UTC"); await set("quiet_hours", null); await set("assumed_shipping", 0); await set("sales_tax_rate", 0); await set("bulky_shipping", 0);
   for (const [k, v] of Object.entries(settings)) await set(k, v);
   const api = {
     db, token, set,
@@ -898,6 +898,75 @@ test("mandatory shipping acts like a buyer's premium: it comes off max bid, prof
   if (bid > 0) assert.ok(Math.abs(n(row.roi_base) - n(row.profit_base) / (bid * 1.25 + 40)) < 1e-9, "dash_search's inline roi_base must match too");
   assert.equal(n(row.max_dealer), Math.floor((n(row.v_dealer) * 0.85 - 40) / 1.25), "dash_search's inline max_dealer must match dealer_case_json's formula");
   assert.ok(Math.abs(n(row.profit_dealer) - (n(row.v_dealer) - (bid * 1.25 + 40))) < 0.01, "dash_search's inline profit_dealer must match too");
+});
+
+test("sales tax and category-aware (bulky) shipping apply consistently across shipping_for_category, suggested_max_bid, case_json, dealer_case_json, and dash_search's own inline duplicate", async () => {
+  const t = await fresh({ assumed_shipping: 40, bulky_shipping: 200, sales_tax_rate: 0.1,
+                           bulky_categories: ["Furniture", "Art"] });
+  const dash = (await t.one("select value #>> '{}' v from settings where key='dashboard_token'")).v;
+  const n = (x) => Number(x);
+
+  // shipping_for_category: bulky categories get bulky_shipping, everything else the flat default
+  const ship = async (cat) => n((await t.db.query("select shipping_for_category($1) s", [cat])).rows[0].s);
+  assert.equal(await ship("Furniture"), 200);
+  assert.equal(await ship("Art"), 200);
+  assert.equal(await ship("Watches"), 40, "a non-bulky category still gets the flat assumed_shipping");
+  assert.equal(await ship(null), 40, "no category at all falls back to the flat default");
+
+  // suggested_max_bid: category now changes which shipping figure gets subtracted, and tax is
+  // folded into the divisor alongside the buyer's premium
+  const max = async (low, cat) => n((await t.db.query("select suggested_max_bid($1, $2) m", [low, cat])).rows[0].m);
+  const maxFurniture = await max(14000, "Furniture");
+  const maxWatch = await max(14000, "Watches");
+  assert.equal(maxFurniture, Math.floor(((14000 - 767.5) * 0.85 - 200) / (1.25 * 1.1)), "bulky shipping and tax both apply");
+  assert.equal(maxWatch, Math.floor(((14000 - 767.5) * 0.85 - 40) / (1.25 * 1.1)), "non-bulky still gets flat shipping, same tax");
+  assert.ok(maxFurniture < maxWatch, "higher bulky shipping means a lower safe max bid for the same value");
+
+  // case_json: profit and ROI net out both the category-aware shipping and sales tax
+  const cj = async (v, bid, cat) => (await t.db.query("select case_json($1, $2, $3) c", [v, bid, cat])).rows[0].c;
+  const c = await cj(3750, 3300, "Art");
+  const fee = n((await t.db.query("select resale_fee($1) f", [3750])).rows[0].f);
+  const cost = (3300 * 1.25 + 200) * 1.1;
+  assert.ok(Math.abs(n(c.profit) - ((3750 - fee) - cost)) < 0.01, "profit nets out bulky shipping and tax together");
+  assert.ok(Math.abs(n(c.roi) - ((3750 - fee) - cost) / cost) < 1e-9);
+  // omitting the category still works and behaves like a non-bulky lot
+  const cNoCat = await cj(3750, 3300, null);
+  const costPlain = (3300 * 1.25 + 40) * 1.1;
+  assert.ok(Math.abs(n(cNoCat.profit) - ((3750 - fee) - costPlain)) < 0.01, "no category passed falls back to flat shipping, tax still applies");
+
+  // dealer_case_json: same treatment, no resale fee subtracted (a dealer resells it themselves)
+  const dc = async (w, bid, cat) => (await t.db.query("select dealer_case_json($1, $2, $3) c", [w, bid, cat])).rows[0].c;
+  const d = await dc(10000, 4000, "Furniture");
+  const dCost = (4000 * 1.25 + 200) * 1.1;
+  assert.ok(Math.abs(n(d.profit) - (8500 - dCost)) < 0.01, "dealer profit also nets bulky shipping and tax");
+
+  // dash_bid_math / dash_set_bid_math: the two new settings round-trip and validate
+  const bm = (await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r;
+  assert.equal(n(bm.tax), 0.1);
+  assert.equal(n(bm.bulky_shipping), 200);
+  assert.deepEqual(bm.bulky_categories, ["Furniture", "Art"]);
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, 40, 0.07, 250)", [dash]);
+  const bm2 = (await t.db.query("select dash_bid_math($1) r", [dash])).rows[0].r;
+  assert.equal(n(bm2.tax), 0.07, "tax rate is settable via dash_set_bid_math");
+  assert.equal(n(bm2.bulky_shipping), 250, "bulky shipping is settable via dash_set_bid_math");
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, 40, 0.6)", [dash]), /sales tax rate must be between/);
+  await assert.rejects(() => t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, 40, 0.1, -5)", [dash]), /bulky-item shipping must be between/);
+  await t.db.query("select dash_set_bid_math($1, 0.25, 0.15, 0.15, 40, 0.1, 200)", [dash]);
+
+  // dash_search: a bulky-category lot and a non-bulky lot in the same search each get their own
+  // category's shipping, and the inline profit/roi must still match case_json's formula exactly
+  await t.db.query("insert into lots (item_id, url, name, category, ends_at) values ($1,$2,$3,$4,$5)",
+    ["bulkytest1", "https://www.ebth.com/items/bulkytest1", "A large armoire", "Furniture", "2099-01-01T00:00:00Z"]);
+  await t.db.query("insert into snapshots (item_id, high_bid, ends_at) values ($1,$2,$3)", ["bulkytest1", 3300, "2099-01-01T00:00:00Z"]);
+  await t.db.query("select dash_set_estimate($1,$2,$3,$4,$5,$6,$7,$8)", [dash, "bulkytest1", 3000, 4500, null, null, "n", null]);
+  const rows = (await t.db.query("select dash_search($1,$2::jsonb,$3::timestamptz) r",
+    [dash, JSON.stringify({ status: "all", estimate: "with", category: "Furniture", limit: 10 }), new Date().toISOString()])).rows[0].r.rows;
+  const row = rows.find((r) => r.item_id === "bulkytest1");
+  assert.ok(row, "the bulky-category lot shows up in a category-filtered search");
+  const feeBase = n((await t.db.query("select resale_fee($1) f", [3750])).rows[0].f);
+  const bulkyCost = (3300 * 1.25 + 200) * 1.1;
+  assert.ok(Math.abs(n(row.profit_base) - ((3750 - feeBase) - bulkyCost)) < 0.01, "dash_search's inline profit_base uses the bulky shipping figure for a Furniture lot");
+  assert.ok(Math.abs(n(row.roi_base) - n(row.profit_base) / bulkyCost) < 1e-9);
 });
 
 test("dash_search: p.categories matches any of several categories, alongside the single p.category", { skip: skipSale }, async () => {
