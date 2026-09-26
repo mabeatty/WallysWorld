@@ -24,11 +24,12 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
   const category = get("category");
   const minBid = digits(get("min_bid"));
   const maxBid = digits(get("max_bid"));
+  const minRoi = digits(get("min_roi"));
   const page = Math.max(1, parseInt(get("page") || "1", 10) || 1);
 
   const [r, cats] = await Promise.all([
     rpc<CombinedSearch>("dash_combined_search", {
-      p: { q, status, sort, dir, estimate, category, source, min_bid: minBid, max_bid: maxBid, limit: PER_PAGE, offset: (page - 1) * PER_PAGE },
+      p: { q, status, sort, dir, estimate, category, source, min_bid: minBid, max_bid: maxBid, min_roi: minRoi, limit: PER_PAGE, offset: (page - 1) * PER_PAGE },
     }),
     rpc<CategoryCount[]>("dash_combined_categories"),
   ]);
@@ -42,6 +43,7 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
     if (source) u.set("source", source);
     if (minBid) u.set("min_bid", minBid);
     if (maxBid) u.set("max_bid", maxBid);
+    if (minRoi) u.set("min_roi", minRoi);
     if (category) u.set("category", category);
     u.set("sort", sort);
     u.set("dir", dir);
@@ -101,6 +103,9 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
         <label>Current bid up to
           <input type="text" inputMode="decimal" name="max_bid" defaultValue={maxBid} placeholder="no limit" />
         </label>
+        <label>Minimum ROI, % (worst case)
+          <input type="text" inputMode="decimal" name="min_roi" defaultValue={minRoi} placeholder="no minimum" />
+        </label>
         <label>Your estimate
           <select name="estimate" defaultValue={estimate}>
             <option value="any">Any</option><option value="with">Has an estimate</option><option value="without">No estimate yet</option>
@@ -113,7 +118,7 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
 
       <p className="note" style={{ marginTop: 18 }}>
         {r.total === 0 ? "No lots match." : `Showing ${from}-${to} of ${r.total.toLocaleString("en-US")} lots.`}
-        {r.total === 0 && (q || status !== "open") ? " Try fewer words, or show all lots." : " Click a column heading to sort."}
+        {r.total === 0 && (q || status !== "open" || minRoi) ? " Try fewer words, a lower minimum ROI, or show all lots." : " Click a column heading to sort."}
       </p>
 
       {r.rows.length > 0 && (

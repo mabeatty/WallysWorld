@@ -152,3 +152,31 @@ test("dash_combined_search status and estimate filters behave as they do in the 
   const all = await t.search({ status: "all", limit: 10 });
   assert.deepEqual(all.rows.map((r) => r.item_id).sort(), [openNoEst, openWithEst, closed].sort());
 });
+
+test("dash_combined_search's min_roi filter narrows the list independently of sort -- sorting by time left still only returns lots clearing the ROI floor", async () => {
+  const t = await fresh();
+  await t.set("buyer_premium", 0);
+  await t.set("assumed_shipping", 0);
+  // resale_fee is a real tiered fee (15% under $1,000, independent of target_margin), so these
+  // worst-case ROIs are: flat (100-15-100)/100 = -15%; modest (200-30-100)/100 = 70%;
+  // strong (400-60-100)/100 = 240%.
+  const flat = await t.addEbth({ name: "Flat lot", category: "Art", high_bid: 100, ends_at: "2099-01-03T00:00:00Z" });
+  await t.setEbthEstimate(flat, 100, 100);
+  const modest = await t.addEbth({ name: "Modest lot", category: "Art", high_bid: 100, ends_at: "2099-01-02T00:00:00Z" });
+  await t.setEbthEstimate(modest, 200, 200);
+  const strong = await t.addEbth({ name: "Strong lot", category: "Art", high_bid: 100, ends_at: "2099-01-01T00:00:00Z" });
+  await t.setEbthEstimate(strong, 400, 400);
+
+  // sorting by time left (soonest first) with a 100% minimum ROI: only the strong lot (240%)
+  // clears the bar, and the filter must apply even though the sort key is "ends", not an ROI key
+  const r = await t.search({ status: "all", sort: "ends", dir: "asc", min_roi: "100", limit: 10 });
+  assert.deepEqual(r.rows.map((row) => row.item_id), [strong]);
+
+  // a lower floor (50%) lets the 70% lot back in too, still ordered by time left
+  const r2 = await t.search({ status: "all", sort: "ends", dir: "asc", min_roi: "50", limit: 10 });
+  assert.deepEqual(r2.rows.map((row) => row.item_id), [strong, modest]);
+
+  // no min_roi at all returns everything, unfiltered
+  const r3 = await t.search({ status: "all", sort: "ends", dir: "asc", limit: 10 });
+  assert.deepEqual(r3.rows.map((row) => row.item_id), [strong, modest, flat]);
+});
