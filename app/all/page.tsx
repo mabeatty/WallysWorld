@@ -21,6 +21,7 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
   const dir = get("dir") === "asc" || get("dir") === "desc" ? get("dir") : (sort === "ends" || sort === "name" || sort === "category" ? "asc" : "desc");
   const estimate = ["any", "with", "without"].includes(get("estimate")) ? get("estimate") : "any";
   const source = ["ebth", "catawiki"].includes(get("source")) ? get("source") : "";
+  const starred = get("starred") === "on";
   const category = get("category");
   const minBid = digits(get("min_bid"));
   const maxBid = digits(get("max_bid"));
@@ -29,7 +30,7 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
 
   const [r, cats] = await Promise.all([
     rpc<CombinedSearch>("dash_combined_search", {
-      p: { q, status, sort, dir, estimate, category, source, min_bid: minBid, max_bid: maxBid, min_roi: minRoi, limit: PER_PAGE, offset: (page - 1) * PER_PAGE },
+      p: { q, status, sort, dir, estimate, category, source, starred: starred ? true : undefined, min_bid: minBid, max_bid: maxBid, min_roi: minRoi, limit: PER_PAGE, offset: (page - 1) * PER_PAGE },
     }),
     rpc<CategoryCount[]>("dash_combined_categories"),
   ]);
@@ -41,6 +42,7 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
     u.set("status", status);
     u.set("estimate", estimate);
     if (source) u.set("source", source);
+    if (starred) u.set("starred", "on");
     if (minBid) u.set("min_bid", minBid);
     if (maxBid) u.set("max_bid", maxBid);
     if (minRoi) u.set("min_roi", minRoi);
@@ -113,6 +115,7 @@ export default async function AllItems({ searchParams }: { searchParams: Promise
         </label>
         <input type="hidden" name="sort" value={sort} />
         <input type="hidden" name="dir" value={dir} />
+        <label className="check"><input type="checkbox" name="starred" defaultChecked={starred} /> Followed lots only</label>
         <div><button type="submit">Apply filters</button></div>
       </form>
 

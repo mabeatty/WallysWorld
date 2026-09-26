@@ -34,12 +34,14 @@ async function fresh() {
     db.query("select dash_set_estimate($1,$2,$3,$4,null,$5,'t','t')", [token, id, low, high, confidence]);
   const setCatawikiEstimate = (id, low, high, confidence = "medium") =>
     db.query("select dash_catawiki_set_estimate($1,$2,$3,$4,null,$5,'t','t')", [token, id, low, high, confidence]);
+  const setStarred = (source, id, val) =>
+    db.query(`update ${source === "catawiki" ? "catawiki_lots" : "lots"} set starred=$1 where item_id=$2`, [val, id]);
   const search = async (p = {}) => (await db.query("select dash_combined_search($1,$2::jsonb) r", [token, JSON.stringify(p)])).rows[0].r;
   const categories = async () => (await db.query("select dash_combined_categories($1) r", [token])).rows[0].r;
   const unifiedCategory = async (cat, name = null) =>
     (await db.query("select unified_category($1,$2) c", [cat, name])).rows[0].c;
 
-  return { db, token, set, addEbth, addCatawiki, setEbthEstimate, setCatawikiEstimate, search, categories, unifiedCategory };
+  return { db, token, set, addEbth, addCatawiki, setEbthEstimate, setCatawikiEstimate, setStarred, search, categories, unifiedCategory };
 }
 
 test("unified_category maps every raw EBTH category to its own bucket, merges the jewelry subcategories, and splits trading cards out of collectibles by name", async () => {
@@ -151,6 +153,24 @@ test("dash_combined_search status and estimate filters behave as they do in the 
 
   const all = await t.search({ status: "all", limit: 10 });
   assert.deepEqual(all.rows.map((r) => r.item_id).sort(), [openNoEst, openWithEst, closed].sort());
+});
+
+test("dash_combined_search's starred filter returns only lots marked as followed, on either platform -- the one place that concept should work across both", async () => {
+  const t = await fresh();
+  const ebthFollowed = await t.addEbth({ name: "EBTH followed lot", category: "Art" });
+  const ebthNot = await t.addEbth({ name: "EBTH unfollowed lot", category: "Art" });
+  const cwFollowed = await t.addCatawiki({ name: "Catawiki followed lot", category: "Stamps" });
+  const cwNot = await t.addCatawiki({ name: "Catawiki unfollowed lot", category: "Stamps" });
+  await t.setStarred("ebth", ebthFollowed, true);
+  await t.setStarred("catawiki", cwFollowed, true);
+
+  const r = await t.search({ status: "all", starred: "true", limit: 10 });
+  assert.deepEqual(r.rows.map((row) => row.item_id).sort(), [ebthFollowed, cwFollowed].sort());
+  assert.ok(!r.rows.some((row) => row.item_id === ebthNot || row.item_id === cwNot));
+
+  // without the filter, everything (followed or not, either platform) still comes back
+  const all = await t.search({ status: "all", limit: 10 });
+  assert.equal(all.rows.length, 4);
 });
 
 test("dash_combined_search's min_roi filter narrows the list independently of sort -- sorting by time left still only returns lots clearing the ROI floor", async () => {
