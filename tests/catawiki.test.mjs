@@ -76,12 +76,15 @@ async function fresh() {
   await db.exec(MIGRATION);
   const token = (await db.query("select value #>> '{}' t from settings where key='ingest_token'")).rows[0].t;
   const dash = (await db.query("select value #>> '{}' t from settings where key='dashboard_token'")).rows[0].t;
+  const set = async (k, v) => db.query("update settings set value=$2::jsonb where key=$1", [k, JSON.stringify(v)]);
+  await set("min_gap_seconds", 0);
+  await set("quiet_hours", null);
   return {
     db, token, dash,
     ingest: async (p) => (await db.query("select catawiki_ingest_page($1,$2::jsonb) r", [token, JSON.stringify(p)])).rows[0].r,
     next_job: async (now) => (await db.query("select catawiki_next_job($1,$2::timestamptz) j", [token, now || new Date().toISOString()])).rows[0].j,
     one: async (sql, params) => (await db.query(sql, params)).rows[0],
-    set: async (k, v) => db.query("update settings set value=$2::jsonb where key=$1", [k, JSON.stringify(v)]),
+    set,
   };
 }
 
@@ -214,7 +217,7 @@ test("dash_catawiki_search: worst/base/best sort and match catawiki_case_json's 
 
 test("a lot discovered via a list job (which never carries its own ends_at) falls back to its auction's ends_at, and so becomes eligible for a detail job (regression for the 0028 bug)", async () => {
   const t = await fresh();
-  const auctionEndsAt = "2026-09-26T18:00:00Z";
+  const auctionEndsAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
   const auction = { id: "1254400", name: "Exclusive International Stamps Auction", url: "https://www.catawiki.com/en/a/1254400", category: "Stamps", curator: "Someone", ends_at: auctionEndsAt };
   // exactly what parseAuctionList's lots ever look like: no ends_at field at all.
   const listItem = { item_id: "999001", name: "Test lot", url: "https://www.catawiki.com/en/l/999001", condition: "Used", auction_id: "1254400" };
@@ -226,7 +229,42 @@ test("a lot discovered via a list job (which never carries its own ends_at) fall
 
   // before the fix, this lot's NULL ends_at made it permanently ineligible here, since the query
   // requires ends_at > now() -- the crawler would loop on list jobs forever and never detail anything.
-  const job = await t.next_job(new Date(Date.parse(auctionEndsAt) - 24 * 3600 * 1000).toISOString());
+  const job = await t.next_job();
   assert.equal(job.kind, "detail");
   assert.equal(job.item_id, "999001");
+});
+
+test("catawiki_next_job does not re-visit an already-detailed lot forever just because it has no published estimate (regression for the 0029 bug)", async () => {
+  const t = await fresh();
+  const auctionEndsAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+  const auction = { id: "1254400", name: "Test Auction", url: "https://www.catawiki.com/en/a/1254400", category: "Stamps", curator: null, ends_at: auctionEndsAt };
+  // three lots discovered in the same list-job batch, so (as in production) they'd share one
+  // first_seen if this were live -- here just three lots with no seller data yet, none of which
+  // will ever get a published estimate, matching every real lot seen in production so far.
+  const lots = ["A", "B", "C"].map((k) => ({ item_id: "99900" + k, name: "Lot " + k, url: "https://www.catawiki.com/en/l/99900" + k, condition: "Used", auction_id: "1254400" }));
+  await t.ingest({ kind: "list", verdict: "ok", auction, lots });
+
+  const j1 = await t.next_job();
+  assert.equal(j1.kind, "detail");
+  const firstId = j1.item_id;
+
+  // simulate a real detail visit on that lot: seller_name gets set, but Catawiki never publishes
+  // an estimate for it (true of every real lot seen so far) -- estimate_low stays null.
+  await t.ingest({ kind: "detail", verdict: "ok", auction, lots: [{
+    item_id: firstId, name: "Lot", url: "https://www.catawiki.com/en/l/" + firstId, auction_id: "1254400",
+    high_bid: 50, seller_name: "a seller", shipping_eur: 12, condition: "Used",
+  }] });
+
+  const j2 = await t.next_job();
+  assert.equal(j2.kind, "detail");
+  assert.notEqual(j2.item_id, firstId, "must move on to a lot that has never actually been detailed, not the one already done");
+
+  await t.ingest({ kind: "detail", verdict: "ok", auction, lots: [{
+    item_id: j2.item_id, name: "Lot", url: "https://www.catawiki.com/en/l/" + j2.item_id, auction_id: "1254400",
+    high_bid: 20, seller_name: "another seller", shipping_eur: 10, condition: "Used",
+  }] });
+
+  const j3 = await t.next_job();
+  assert.equal(j3.kind, "detail");
+  assert.ok(![firstId, j2.item_id].includes(j3.item_id), "the third lot is the only one left that's never been detailed");
 });
