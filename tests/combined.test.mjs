@@ -157,6 +157,19 @@ test("dash_combined_search status and estimate filters behave as they do in the 
   assert.deepEqual(all.rows.map((r) => r.item_id).sort(), [openNoEst, openWithEst, closed].sort());
 });
 
+test("dash_combined_search can sort by bids_count -- the metric a closed-auctions view needs", async () => {
+  const t = await fresh();
+  const few = await t.addEbth({ name: "Few bids", category: "Art", bids_count: 2 });
+  const many = await t.addEbth({ name: "Many bids", category: "Art", bids_count: 9 });
+  const none = await t.addCatawiki({ name: "No bids", category: "Stamps", bids_count: 0 });
+
+  const desc = await t.search({ status: "all", sort: "bids", dir: "desc", limit: 10 });
+  assert.deepEqual(desc.rows.map((r) => r.item_id), [many, few, none]);
+
+  const asc = await t.search({ status: "all", sort: "bids", dir: "asc", limit: 10 });
+  assert.deepEqual(asc.rows.map((r) => r.item_id), [none, few, many]);
+});
+
 test("dash_combined_search's starred filter returns only lots marked as followed, on either platform -- the one place that concept should work across both", async () => {
   const t = await fresh();
   const ebthFollowed = await t.addEbth({ name: "EBTH followed lot", category: "Art" });

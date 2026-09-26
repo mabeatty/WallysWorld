@@ -22,7 +22,7 @@ export default async function CatawikiLotPage({ params, searchParams }: { params
     <>
       <header className="top">
         <h1><StarToggle id={l.item_id} starred={!!l.starred} />{l.name}</h1>
-        <nav className="links"><Link href="/">Dashboard</Link><Link href="/catawiki">Catawiki</Link>{l.url && <a href={l.url} target="_blank" rel="noopener noreferrer">Open on Catawiki</a>}</nav>
+        <nav className="links"><Link href="/">Home</Link><Link href="/closed">Closed auctions</Link>{l.url && <a href={l.url} target="_blank" rel="noopener noreferrer">Open on Catawiki</a>}</nav>
       </header>
       <p className="note">
         {[l.category, l.auction_name, l.curator ? `curated by ${l.curator}` : null, l.catalog_number].filter(Boolean).join(", ")}

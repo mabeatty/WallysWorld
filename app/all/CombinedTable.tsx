@@ -4,18 +4,19 @@ import { money, moneyEUR, roiText, signedMoney, timeLeft, when } from "@/lib/for
 import { setStarredCombined } from "./actions";
 
 type Case = "worst" | "base" | "best";
-export type ColKey = "name" | "category" | "bid" | "ends" | Case;
+export type ColKey = "name" | "category" | "bid" | "bids" | "ends" | Case;
 
-const LABELS: Record<Exclude<ColKey, Case>, string> = { name: "Lot", category: "Category", bid: "Bid", ends: "Time left" };
+const LABELS: Record<Exclude<ColKey, Case>, string> = { name: "Lot", category: "Category", bid: "Bid", bids: "Bids", ends: "Time left" };
 const CASE_LABEL: Record<Case, string> = { worst: "Worst case", base: "Base case", best: "Best case" };
 const isCase = (k: ColKey): k is Case => k === "worst" || k === "base" || k === "best";
 
 // Every EBTH lot is already in USD; Catawiki lots carry their native EUR bid alongside the
 // USD-converted figure so nothing is hidden, but ROI (currency-free) is what you compare and sort
 // by across the two -- the converted dollars are for reading a row, not for ranking it.
-export default function CombinedTable({ rows, cols, sort, dir, sortHref, now, trackReturnTo }: {
-  rows: CombinedRow[]; cols: ColKey[]; sort: string; dir: string; sortHref: (key: string) => string; now: number; trackReturnTo?: string;
+export default function CombinedTable({ rows, cols, sort, dir, sortHref, now, trackReturnTo, bidLabel }: {
+  rows: CombinedRow[]; cols: ColKey[]; sort: string; dir: string; sortHref: (key: string) => string; now: number; trackReturnTo?: string; bidLabel?: string;
 }) {
+  const labels = bidLabel ? { ...LABELS, bid: bidLabel } : LABELS;
   const sortLink = (key: string, label: string) => (
     <Link href={sortHref(key)} className="sortlink">
       {label}<span className="sortmark" aria-hidden="true">{key === sort ? (dir === "asc" ? "\u25B2" : "\u25BC") : ""}</span>
@@ -34,7 +35,7 @@ export default function CombinedTable({ rows, cols, sort, dir, sortHref, now, tr
                 <th key={key} colSpan={2} className="group">{CASE_LABEL[key]}</th>
               ) : (
                 <th key={key} rowSpan={groups.length ? 2 : 1} className={key === sort ? "active" : ""} aria-sort={aria(key)}>
-                  {sortLink(key, LABELS[key])}
+                  {sortLink(key, labels[key])}
                 </th>
               ),
             )}
@@ -112,6 +113,8 @@ function Cell({ col, l, now, trackReturnTo }: { col: Exclude<ColKey, Case>; l: C
           {l.currency === "EUR" ? <span className="sub">{money(l.bid_usd)}</span> : null}
         </td>
       );
+    case "bids":
+      return <td className="num hide-sm">{l.bids_count ?? "-"}</td>;
     case "ends": {
       const left = timeLeft(l.ends_at, now);
       return left.label === "closed"
