@@ -1,18 +1,28 @@
 // Runs on catawiki.com pages. Reads a lot's or an auction listing's data straight out of the
 // page's own __NEXT_DATA__ and hands it to the background worker.
 //
-// Unlike content.js/EBTH, this never needs to poll for content to appear: a Catawiki lot page is
-// server-rendered fresh on every request (getServerSideProps), so the live bid, full bid history,
-// and reserve status are already in the HTML the instant it loads -- see lib/catawiki.js's file
-// header for how that was confirmed. An auction-listing page never carries bid data at all, live
-// or static, by the crawler's own design (see parseAuctionList's comment) -- so there is nothing
-// to wait for there either.
+// A lot or auction-list page never needs to wait for anything: the live bid, full bid history,
+// reserve status, and every lot's identity are already in the very first HTML the server sends
+// (getServerSideProps) -- see lib/catawiki.js's file header for how that was confirmed. A category
+// page (e.g. /en/c/187-stamps) is a different, much heavier kind of page -- thousands of items,
+// filters, pagination -- and real production evidence (an extension-created background tab
+// reporting an unrecognized page on its first read, while the same tab checked moments later by
+// hand always showed the right data) points to it briefly settling through an initial state
+// before its real content is in place. So unlike the other two page kinds, this one gets a short
+// retry loop rather than a single, immediate read.
 (async function () {
   if (window.top !== window) return;
   var who;
   try { who = await chrome.runtime.sendMessage({ type: "whoami" }); } catch (e) { return; }
   var isJob = !!(who && who.job);
-  var kind = Catawiki.pageKind(document);
+
+  var kind = null;
+  for (var attempt = 0; attempt < 10; attempt++) {
+    kind = Catawiki.pageKind(document);
+    if (kind) break;
+    await new Promise(function (r) { setTimeout(r, 500); });
+  }
+
   if (!isJob && !kind) return;
   if (isJob && !kind) kind = who.kind === "list" ? "list" : "lot";
 

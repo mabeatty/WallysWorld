@@ -5,9 +5,10 @@ importScripts("lib/ebth.js");
 
 const JOB_TIMEOUT_MS = 90000;
 const LIST_JOB_TIMEOUT_MS = 120000;   // a list page can take up to 40s for its lots to appear
-const CATAWIKI_JOB_TIMEOUT_MS = 60000; // Catawiki pages are server-rendered with everything already
-                                        // present -- no DOM-polling wait, so a shorter timeout suffices
-                                        // for either job kind
+const CATAWIKI_JOB_TIMEOUT_MS = 60000; // A lot or auction-list page is server-rendered with
+                                        // everything already present; a category page gets a short
+                                        // retry loop in content-catawiki.js (well under a few
+                                        // seconds) before giving up -- this budget covers both
 
 chrome.runtime.onInstalled.addListener(() => chrome.alarms.create("tick", { periodInMinutes: 1 }));
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create("tick", { periodInMinutes: 1 }));
