@@ -31,14 +31,16 @@
     try { return JSON.parse(el.textContent); } catch (e) { return null; }
   }
 
-  // "/a/[...pageId]" for an auction listing, "/l/[lotId]" for a single lot -- confirmed against
-  // real pages of both kinds. Far more reliable than guessing from the URL path, since it is the
-  // actual Next.js page template Catawiki itself rendered.
+  // "/a/[...pageId]" for an auction listing, "/l/[lotId]" for a single lot, "/c/[[...category]]"
+  // for a category/search listing page (e.g. /en/c/187-stamps) -- confirmed against real pages of
+  // all three kinds. Far more reliable than guessing from the URL path, since it is the actual
+  // Next.js page template Catawiki itself rendered.
   function pageKind(doc) {
     var nd = nextData(doc);
     var p = nd && nd.page;
     if (p === "/a/[...pageId]") return "list";
     if (p === "/l/[lotId]") return "lot";
+    if (p === "/c/[[...category]]") return "category";
     return null;
   }
 
@@ -98,6 +100,39 @@
       };
     });
     return { auction: auction, lots: lots };
+  }
+
+  // A category/search listing page (e.g. /en/c/187-stamps): unlike an auction-list page, this
+  // aggregates lots across many different underlying auctions -- each lot carries its own
+  // auctionId rather than sharing one. There is no single auction descriptor for the page as a
+  // whole (pageProps.auction does not exist here), so auctionFromPage() correctly returns null
+  // for this page kind and callers should not expect one.
+  //
+  // No bid data lives here either, same as an auction-list page -- confirmed against a real
+  // capture of https://www.catawiki.com/en/c/187-stamps: every one of biddingBlockResponse's
+  // fields, high_bid, bids_count, reserve status, is simply absent from pageProps.categoryLots.lots.
+  // biddingStartTime IS present per lot, but that is when bidding opened, not when it closes, and
+  // auction length isn't fixed across lots -- inferring a close time from it would be a guess, not
+  // a fact, so it is deliberately left out here. That means every lot discovered this way has no
+  // ends_at until its own detail visit -- see migration 0035 for the next_job eligibility fix that
+  // makes such a lot actually reachable for that visit (the pre-existing ends_at > now() check
+  // would otherwise permanently exclude it, the same class of bug fixed once already in 0028/0029
+  // for a different cause).
+  function parseCategoryList(doc) {
+    var nd = nextData(doc);
+    var pp = nd && nd.props && nd.props.pageProps;
+    var cl = pp && pp.categoryLots;
+    if (!cl || !cl.lots) return null;
+    var lots = cl.lots.map(function (l) {
+      return {
+        item_id: String(l.id),
+        name: l.title || null,
+        url: l.url || null,
+        condition: l.subtitle || null,
+        auction_id: l.auctionId != null ? String(l.auctionId) : null
+      };
+    });
+    return { auction: null, lots: lots, total: typeof cl.total === "number" ? cl.total : null };
   }
 
   // A single lot's page. Turns out everything we need -- including the live bid, full bid
@@ -222,7 +257,7 @@
     };
   }
 
-  var Catawiki = { nextData: nextData, pageKind: pageKind, auctionFromPage: auctionFromPage, parseAuctionList: parseAuctionList, parseLotDetail: parseLotDetail, toIngestLot: toIngestLot, clean: clean, num: num };
+  var Catawiki = { nextData: nextData, pageKind: pageKind, auctionFromPage: auctionFromPage, parseAuctionList: parseAuctionList, parseCategoryList: parseCategoryList, parseLotDetail: parseLotDetail, toIngestLot: toIngestLot, clean: clean, num: num };
   if (typeof module !== "undefined" && module.exports) module.exports = Catawiki;
   else root.Catawiki = Catawiki;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATION, HAVE_CATAWIKI_FIXTURES, Catawiki, catawikiListDoc, catawikiLotDoc } from "./helpers.mjs";
+import { MIGRATION, HAVE_CATAWIKI_FIXTURES, HAVE_CATAWIKI_CATEGORY_FIXTURE, Catawiki, catawikiListDoc, catawikiLotDoc, catawikiCategoryDoc } from "./helpers.mjs";
 
 const skip = !HAVE_CATAWIKI_FIXTURES && "save a Catawiki auction-list page and a lot page into tests/fixtures_catawiki";
 
@@ -17,6 +17,28 @@ test("parseAuctionList reads the auction and every lot's identity/condition from
   assert.ok(lots.length > 0);
   assert.ok(lots.every((l) => l.auction_id === "1270330"));
   assert.ok(lots.every((l) => !("high_bid" in l)), "a list page carries no bid data for any lot -- see parseAuctionList's own comment");
+});
+
+test("pageKind recognizes a category/search page as its own kind, distinct from an auction list", { skip: !HAVE_CATAWIKI_CATEGORY_FIXTURE && "save a Catawiki category page (e.g. /en/c/187-stamps) into tests/fixtures_catawiki/stamps_category.html" }, () => {
+  assert.equal(Catawiki.pageKind(catawikiCategoryDoc()), "category");
+});
+
+test("parseCategoryList reads every lot's identity/condition and its OWN auction_id, with no auction of its own and no bid data anywhere", { skip: !HAVE_CATAWIKI_CATEGORY_FIXTURE && "save a Catawiki category page into tests/fixtures_catawiki/stamps_category.html" }, () => {
+  const parsed = Catawiki.parseCategoryList(catawikiCategoryDoc());
+  assert.ok(parsed, "parseCategoryList should recognize a real category page");
+  assert.equal(parsed.auction, null, "a category page aggregates many auctions -- there is no single one to report");
+  assert.equal(parsed.total, 5643, "the real total this page reported across all its pages");
+  assert.equal(parsed.lots.length, 24, "lots on this one page, matching lotsPerPage");
+  const first = parsed.lots[0];
+  assert.equal(first.item_id, "107042172");
+  assert.equal(first.name, "United States  - Mint collection USA + Lot of 4-blocks");
+  assert.equal(first.condition, "MNH (Mint never hinged)");
+  assert.equal(first.url, "https://www.catawiki.com/en/l/107042172-united-states-mint-collection-usa-lot-of-4-blocks");
+  assert.equal(first.auction_id, "1302440");
+  // each lot carries its own auction_id -- unlike an auction-list page, these are not all the same
+  const distinctAuctions = new Set(parsed.lots.map((l) => l.auction_id));
+  assert.ok(distinctAuctions.size > 1, "a category page's lots span multiple different underlying auctions");
+  assert.ok(parsed.lots.every((l) => !("high_bid" in l)), "no bid data at category-list level either");
 });
 
 test("parseLotDetail reads live bid, bid-history length, reserve, shipping, seller and the new verified/live_format/catalog_number fields from one JSON parse", { skip }, () => {
@@ -233,6 +255,63 @@ test("a lot discovered via a list job (which never carries its own ends_at) fall
   assert.equal(job.kind, "detail");
   assert.equal(job.item_id, "999001");
 });
+
+test("a lot discovered via a category page (which has no shared auction to fall back to at all -- its ends_at is genuinely unknown until detailed) still becomes eligible for a detail job (regression for the 0035 fix)", async () => {
+  const t = await fresh();
+  // exactly what parseCategoryList produces: no auction object at all (unlike a list-job payload,
+  // which at least has one to fall back to), and the lot itself carries its own auction_id.
+  const listItem = { item_id: "999002", name: "Test category lot", url: "https://www.catawiki.com/en/l/999002", condition: "Used", auction_id: "1302440" };
+  assert.ok(!("ends_at" in listItem));
+  await t.ingest({ kind: "category", verdict: "ok", auction: null, lots: [listItem] });
+
+  const row = await t.one("select ends_at, auction_id from catawiki_lots where item_id=$1", ["999002"]);
+  assert.equal(row.ends_at, null, "there is no auction to fall back to, so this stays genuinely unknown until detailed");
+  assert.equal(row.auction_id, "1302440", "the lot's own auction_id is used even with no top-level auction present");
+
+  // before the fix, ends_at is null made this permanently ineligible here too, the same way a
+  // missing fallback did in the 0028 case -- except here there's no auction to fall back to at
+  // all, so the fix has to treat null itself as eligible, not just widen the fallback.
+  const job = await t.next_job();
+  assert.equal(job.kind, "detail");
+  assert.equal(job.item_id, "999002");
+
+  // and once it's actually been detailed, it must stop being offered again, exactly like any
+  // other lot -- ends_at being null was never the reason it stays eligible forever; seller_name
+  // is null is, and that becomes false after one real detail visit regardless of what ends_at
+  // turns out to be.
+  await t.ingest({ kind: "detail", verdict: "ok", auction: null, lots: [{
+    item_id: "999002", name: "Test category lot", url: "https://www.catawiki.com/en/l/999002", auction_id: "1302440",
+    high_bid: 15, seller_name: "a seller", shipping_eur: 8, condition: "Used", ends_at: new Date(Date.now() - 3600 * 1000).toISOString(),
+  }] });
+  const job2 = await t.next_job();
+  assert.notEqual(job2 && job2.item_id, "999002", "must not be offered again after a real detail visit, even though it turned out to already be closed");
+});
+
+test("catawiki_ingest_page auto-creates a minimal placeholder auction row for any auction_id a lot references that we've never crawled directly -- needed for category-page payloads, which have no top-level auction at all (regression for the 0035 fix)", async () => {
+  const t = await fresh();
+  await t.ingest({ kind: "category", verdict: "ok", auction: null, lots: [
+    { item_id: "999010", name: "A category lot", url: "https://www.catawiki.com/en/l/999010", condition: "Used", auction_id: "1302440" },
+  ] });
+  const row = await t.one("select name, url, category, curator, ends_at from catawiki_auctions where auction_id=$1", ["1302440"]);
+  assert.ok(row, "a placeholder row must exist, or the lot insert would have failed its foreign key");
+  assert.equal(row.name, "Auction 1302440");
+  assert.equal(row.url, "https://www.catawiki.com/en/a/1302440");
+  assert.equal(row.category, null);
+  assert.equal(row.curator, null);
+  assert.equal(row.ends_at, null);
+
+  // if that same auction is later actually crawled directly (e.g. someone visits its own list or
+  // lot page), the real data must overwrite the placeholder, the same as any other re-crawl.
+  await t.ingest({ kind: "list", verdict: "ok",
+    auction: { id: "1302440", name: "Real Auction Name", url: "https://www.catawiki.com/en/a/1302440-real-auction-name", category: "Stamps", curator: "A Real Curator", ends_at: new Date(Date.now() + 3600 * 1000).toISOString() },
+    lots: [{ item_id: "999011", name: "Another lot", url: "https://www.catawiki.com/en/l/999011", condition: "Used", auction_id: "1302440" }],
+  });
+  const row2 = await t.one("select name, url, category, curator from catawiki_auctions where auction_id=$1", ["1302440"]);
+  assert.equal(row2.name, "Real Auction Name", "the placeholder must not survive a real crawl of the same auction");
+  assert.equal(row2.category, "Stamps");
+  assert.equal(row2.curator, "A Real Curator");
+});
+
 
 test("catawiki_next_job does not re-visit an already-detailed lot forever just because it has no published estimate (regression for the 0029 bug)", async () => {
   const t = await fresh();

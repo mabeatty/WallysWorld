@@ -36,6 +36,12 @@
     if (verdict === "ok" && kind === "list") {
       var parsed = Catawiki.parseAuctionList(document);
       lots = parsed ? parsed.lots.map(Catawiki.toIngestLot) : [];
+    } else if (verdict === "ok" && kind === "category") {
+      // A category page has no single auction of its own -- auctionFromPage() already resolves
+      // to null here since pageProps.auction doesn't exist on this page kind, which is correct:
+      // each lot found this way carries its own auction_id instead (see parseCategoryList).
+      var parsedCat = Catawiki.parseCategoryList(document);
+      lots = parsedCat ? parsedCat.lots.map(Catawiki.toIngestLot) : [];
     } else if (verdict === "ok") {
       var lot = Catawiki.parseLotDetail(document);
       lots = lot ? [Catawiki.toIngestLot(lot)] : [];
